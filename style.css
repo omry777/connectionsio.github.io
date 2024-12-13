@@ -1,0 +1,113 @@
+/* Grid Styles */
+.grid-container {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin: 20px auto;
+    max-width: 600px;
+  }
+  
+  .grid-item {
+    text-align: center;
+    padding: 15px;
+    border: 2px solid #ddd;
+    background-color: #f9f9f9;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 24px;
+    font-weight: bold;
+    transition: 0.2s;
+  }
+  
+  .grid-item:hover {
+    background-color: #e0e0e0;
+  }
+  
+  .grid-item.selected {
+    background-color: #e0e0e0; /* Yellow for selection */
+  }
+  
+  .grid-item[style] {
+    cursor: default; /* Disable pointer after group match */
+  }
+  
+  /* Matched Groups */
+  #groups {
+    margin-top: 20px;
+    padding: 10px;
+    background: #f4f4f4;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+  }
+  
+  .group {
+    margin-bottom: 15px;
+    padding: 10px;
+    border: 2px solid #000;
+    border-radius: 8px;
+    background-color: #fff;
+  }
+  
+  .group p {
+    margin: 0 0 10px;
+    font-weight: bold;
+    color: #333;
+  }
+  
+  .group-words {
+    font-style: italic;
+    color: #666;
+  }
+  
+  .controls {
+    margin: 20px 0;
+    text-align: center; /* Center the content inside the container */
+    width: 100%; /* Ensure the container spans the full width */
+  }
+  
+  .controls button {
+    margin: 0 10px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 20px;
+    background-color: #fff;
+    color: #333;
+    font-size: 16px;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    transition: background-color 0.3s;
+  }
+  
+  .controls button:hover {
+    background-color: #f0f0f0;
+  }
+  
+
+.mistakes {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    margin-top: 10px;
+  }
+  
+  .mistake-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: #555;
+  }
+  h1 {
+    font-family: 'Calibri', sans-serif;
+    font-size: 2rem;
+    color: #333;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  body {
+    background-image: url('background.jpg');
+    background-size: cover; /* Ensures the image covers the entire page */
+    background-position: center center; /* Centers the image */
+    background-attachment: fixed; /* Keeps the image fixed when scrolling */
+    height: 100vh; /* Ensures the background covers the full height of the page */
+    margin: 0;
+  }
