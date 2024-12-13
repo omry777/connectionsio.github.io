@@ -1,6 +1,43 @@
 let puzzle = {};
 let selectedItems = [];
 let currentGroups = [];
+let mistakesCount = 0;
+const dots = document.querySelectorAll('.dot');
+const totalDots = dots.length;
+
+function markMistake() {
+  // Turn the dot red
+  dot = dots[mistakesCount]
+  dot.classList.add('red');
+  mistakesCount++;
+
+  // Check if all dots are red (game over)
+  if (mistakesCount === totalDots) {
+    endGame();
+  }
+}
+
+function endGame() {
+  // Show the "Better luck next time" message
+  alert('הפעם זה לא הלך, בהצלחה ביום הבא');
+  
+  // Reveal all solutions (for this example, assuming solutions are stored in an array)
+  revealSolutions();
+}
+
+function revealSolutions() {
+  revealRemainingGroups()
+  // Replace with logic to reveal the solution for each group
+  console.log('Solutions Revealed');
+  // Optionally highlight the correct answers
+}
+
+// Example of handling the wrong selection
+// document.querySelectorAll('.dot').forEach(dot => {
+//   dot.addEventListener('click', () => {
+//     markMistake(dot);
+//   });
+// });
 
 // Load puzzle based on today's date
 fetch('puzzles.json')
@@ -9,8 +46,12 @@ fetch('puzzles.json')
     const today = new Date().toISOString().split('T')[0];
     puzzle = data.puzzles.find(p => p.date === today);
     if (puzzle) {
-      loadPuzzle();
+        puzzle.groups.forEach((group,index) => {
+            group.guessed = false; // Set initial guessed status to false
+            group.index = index
+        });
       shuffleGrid()
+    //   loadPuzzle();
     } else {
       alert('No puzzle found for today.');
     }
@@ -21,13 +62,13 @@ fetch('puzzles.json')
 function loadPuzzle() {
   const grid = document.getElementById('grid');
   grid.innerHTML = ''; // Clear grid
-  puzzle.words.forEach(word => {
-    const item = document.createElement('div');
-    item.classList.add('grid-item');
-    item.textContent = word;
-    item.onclick = () => toggleSelection(item, word);
-    grid.appendChild(item);
-  });
+  puzzle.words.forEach( word => {
+        const item = document.createElement('div');
+        item.classList.add('grid-item');
+        item.textContent = word;
+        item.onclick = () => toggleSelection(item, word);
+        grid.appendChild(item);
+        });
 //   shuffleGrid()
 }
 
@@ -53,14 +94,16 @@ function checkGroup() {
   );
 
   if (matchedGroup) {
-    alert(`Correct! ${matchedGroup.explanation}`);
+    alert(`נכון מאוד: ${matchedGroup.explanation}`);
+    matchedGroup.guessed = true;
     highlightGroup(matchedGroup);
     removeMatchedWords(matchedGroup.words);
+    // removeMatchedGroup(group)
     renderGroups(matchedGroup);
   } else {
-    alert('Incorrect group. Try again!');
+    alert('זו לא הקבוצה עליה חשבנו, נסה שוב!');
     deselectAll();
-    
+    markMistake()
   }
   selectedItems = []; // Reset selection
 }
@@ -83,10 +126,20 @@ function removeMatchedWords(words) {
   loadPuzzle(); // Reload grid with remaining words
 }
 
+function removeMatchedGroup(group) {
+  const groupContainer = document.querySelector(`[data-group-id="${group.index}"]`);
+  if (groupContainer) {
+    groupContainer.classList.add('revealed'); // Optionally, add a "revealed" class for visual effects
+    setTimeout(() => {
+      groupContainer.remove(); // Remove the group container from the grid
+    }, 1000); // Delay to match the reveal transition effect
+  }
+
+}
+
 // Render matched groups on the left
 function renderGroups(group) {
-  const groupsContainer = document.getElementById('groups');
-  console.log(groupsContainer);
+  const groupsContainer = document.getElementById('revealed-groups');
   const groupElement = document.createElement('div');
   groupElement.classList.add('group');
   groupElement.style.borderColor = group.color;
@@ -96,13 +149,34 @@ function renderGroups(group) {
   `;
   groupsContainer.appendChild(groupElement);
 }
+// Function to reveal the remaining groups at the end of the game
+function revealRemainingGroups() {
+    const groupsContainer = document.getElementById('revealed-groups');
+
+    // Iterate over all groups and move the unguessed ones to the revealed container
+    puzzle.groups.forEach(group => {
+      if (!group.guessed) {
+        const groupElement = document.createElement('div');
+        // group.words.style.backgroundColor = group.color;
+        removeMatchedWords(group.words);
+        groupElement.classList.add('group');
+        groupElement.style.borderColor = group.color;
+        groupElement.innerHTML = `
+          <p><strong>Group Explanation:</strong> ${group.explanation}</p>
+          <div class="group-words">${group.words.join(', ')}</div>
+        `;
+        groupsContainer.appendChild(groupElement);
+        }
+        
+    })
+}
 
 // Shuffle grid
 function shuffleGrid() {
     puzzle.words.sort(() => Math.random() - 0.5);
     loadPuzzle();
   }
-  
+
   // Deselect all items
   function deselectAll() {
     selectedItems = [];

@@ -18,22 +18,21 @@
   <div class="row justify-content-center">
     <div class="col-md-6" id="game-container">
         <div class="grid-container" id="grid"></div>
-        <div id="groups"></div>
+        <div id="revealed-groups"></div>
     </div>
   </div>
 
   <div class="mistakes">
-    <div class="mistake-dot"></div>
-    <div class="mistake-dot"></div>
-    <div class="mistake-dot"></div>
-    <div class="mistake-dot"></div>
-    <div class="mistake-dot"></div>
+    <span class="dot" data-index="1"></span>
+    <span class="dot" data-index="2"></span>
+    <span class="dot" data-index="3"></span>
+    <span class="dot" data-index="4"></span>
   </div>
 
   <div class="controls" id="controls">
     <button class="btn btn-primary mx-2" onclick="shuffleGrid()">Shuffle</button>
     <button class="btn btn-primary mx-2" onclick="deselectAll()">Deselect All</button>
-    <button class="btn btn-primary mx-2" onclick="submitSelection()">Submit</button>
+    <!-- <button class="btn btn-primary mx-2" onclick="submitSelection()">Submit</button> -->
   </div>
 
   <script src="script.js"></script>

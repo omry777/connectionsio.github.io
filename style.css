@@ -96,6 +96,20 @@
     border-radius: 50%;
     background-color: #555;
   }
+  .dot {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    margin: 5px;
+    border-radius: 50%;
+    background-color: #201d1d; /* Default color */
+  }
+  
+  .dot.red {
+    background-color: red; /* Color when incorrect */
+  }
+  
+
   h1 {
     font-family: 'Calibri', sans-serif;
     font-size: 2rem;
