@@ -1,3 +1,6 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
 let puzzle = {};
 let selectedItems = [];
 let currentGroups = [];
@@ -7,7 +10,7 @@ const totalDots = dots.length;
 
 function markMistake() {
   // Turn the dot red
-  dot = dots[mistakesCount]
+  let dot = dots[mistakesCount]
   dot.classList.add('red');
   mistakesCount++;
 
@@ -176,6 +179,10 @@ function shuffleGrid() {
     puzzle.words.sort(() => Math.random() - 0.5);
     loadPuzzle();
   }
+window.reopenForm = function() {
+    document.getElementById("suggestForm").classList.remove("hidden");
+    document.getElementById("successSubmitMessage").classList.remove("show");
+};
 
   // Deselect all items
   function deselectAll() {
@@ -184,3 +191,61 @@ function shuffleGrid() {
       item.classList.remove('selected');
     });
   }
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+// const database = firebase.database();
+
+  // Form submission handler
+document.getElementById('suggestForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  const words = [
+    document.getElementById("word1").value.trim(),
+    document.getElementById("word2").value.trim(),
+    document.getElementById("word3").value.trim(),
+    document.getElementById("word4").value.trim()
+];
+const connection = document.getElementById("connection").value.trim();
+const difficulty = document.getElementById("difficulty").value.trim();
+
+  if (words.includes("") || connection === "") {
+      document.getElementById("status").textContent = "All fields are required!";
+      return;
+  }
+
+    try {
+      await addDoc(collection(db, "suggested_ideas"), {
+        words: words,
+        connection: connection,
+        difficulty: difficulty,
+        timestamp: new Date()
+      });
+      console.log("Suggestion submitted successfully!");
+      document.getElementById("formModal").style.display = 'none';
+      // document.getElementById('successSubmitMessage').style.display = 'block';
+      var successAlert = document.getElementById('successSubmitMessage');
+      successAlert.style.display = 'block';
+
+      setTimeout(function() {
+        successAlert.style.opacity = '1';
+        let fadeEffect = setInterval(function () {
+            if (!successAlert.style.opacity) {
+                successAlert.style.opacity = '1';
+            }
+            if (successAlert.style.opacity > '0') {
+                successAlert.style.opacity -= '0.1';
+            } else {
+                clearInterval(fadeEffect);
+                successAlert.style.display = 'none';
+            }
+        }, 50);
+    }, 3000);
+      var modal = bootstrap.Modal.getInstance(document.getElementById('formModal'));
+      modal.hide();
+    } catch (error) {
+      console.error("Error submitting:", error);
+    }
+    document.getElementById("suggestForm").reset();
+});

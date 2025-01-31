@@ -1,41 +1,100 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <link
-  href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css"
-  rel="stylesheet"
-/>
-
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Connections Game</title>
-  <link rel="stylesheet" href="style.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connections Game</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Additional styling for the form */
+        #formModal .modal-dialog {
+            max-width: 500px;
+        }
+        .hebrew-text {
+            direction: rtl;
+            text-align: right;
+        }
+    </style>
 </head>
 <body>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
     <div class="container my-5">
-  <h1>?האם תצליחו לזהות את 4 הקבוצות המסתתרות</h1>
+        <h1 class="hebrew-text" style="text-align: center;">?האם תצליחו לזהות את 4 הקבוצות המסתתרות </h1>
 
-  <div class="row justify-content-center">
-    <div class="col-md-6" id="game-container">
-        <div class="grid-container" id="grid"></div>
-        <div id="revealed-groups"></div>
+        <!-- Game Container -->
+        <div class="row justify-content-center">
+            <div class="col-md-6" id="game-container">
+                <div class="grid-container" id="grid"></div>
+                <div id="revealed-groups"></div>
+            </div>
+        </div>
+
+        <!-- Mistakes Display -->
+        <div class="mistakes">
+            <span class="dot" data-index="1"></span>
+            <span class="dot" data-index="2"></span>
+            <span class="dot" data-index="3"></span>
+            <span class="dot" data-index="4"></span>
+        </div>
+
+        <!-- Game Controls -->
+        <div class="controls" id="controls">
+            <button class="btn btn-primary mx-2" onclick="shuffleGrid()">Shuffle</button>
+            <button class="btn btn-primary mx-2" onclick="deselectAll()">Deselect All</button>
+            <button class="btn btn-success mx-2" data-bs-toggle="modal" data-bs-target="#formModal" onclick="reopenForm()">
+                Submit Your own Ideas!
+            </button>
+        </div>
+
+        <!-- Form Modal -->
+        <div class="modal fade" id="formModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title hebrew-text">!שלחו את הרעיונות שלכם</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                      <form id="suggestForm">
+                        <div class="mb-3">
+                          <label for="word1" class="form-label hebrew-text">:מילה 1</label>
+                          <input type="text" class="form-control" id="word1" required>
+                        </div>
+                        <div class="mb-3">
+                          <label for="word2" class="form-label hebrew-text">:מילה 2</label>
+                          <input type="text" class="form-control" id="word2" required>
+                        </div>
+                        <div class="mb-3">
+                          <label for="word3" class="form-label hebrew-text">:מילה 3</label>
+                          <input type="text" class="form-control" id="word3" required>
+                        </div>
+                        <div class="mb-3">
+                          <label for="word4" class="form-label hebrew-text">:מילה 4</label>
+                          <input type="text" class="form-control" id="word4" required>
+                        </div>
+                        <div class="mb-3">
+                          <label for="connection" class="form-label hebrew-text">:גורם מקשר</label>
+                          <input type="text" class="form-control" id="connection" required>
+                        </div>
+                        <div class="mb-3">
+                          <label for="difficulty" class="form-label hebrew-text">:רמת קושי</label>
+                          <input type="text" class="form-control" id="difficulty" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary hebrew-text">שליחה</button>
+                        </form>
+                        <p id="status"></p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+    <div id="successSubmitMessage" style="display: none; text-align: center;">
+      <p>תודה על שליחת הרעיון !🎉</p>
     </div>
-  </div>
+    <script src="firebase_config.js"></script>
+    <!-- Your Game Script -->
+    <script type="module" src="script.js"></script>
 
-  <div class="mistakes">
-    <span class="dot" data-index="1"></span>
-    <span class="dot" data-index="2"></span>
-    <span class="dot" data-index="3"></span>
-    <span class="dot" data-index="4"></span>
-  </div>
-
-  <div class="controls" id="controls">
-    <button class="btn btn-primary mx-2" onclick="shuffleGrid()">Shuffle</button>
-    <button class="btn btn-primary mx-2" onclick="deselectAll()">Deselect All</button>
-    <!-- <button class="btn btn-primary mx-2" onclick="submitSelection()">Submit</button> -->
-  </div>
-
-  <script src="script.js"></script>
-</div>
 </body>
 </html>
