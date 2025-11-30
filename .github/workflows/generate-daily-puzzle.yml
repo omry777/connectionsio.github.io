@@ -12,6 +12,11 @@ on:
         description: 'Generate puzzle for specific date (YYYY-MM-DD)'
         required: false
         type: string
+      force:
+        description: 'Force overwrite if puzzle already exists'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -39,12 +44,17 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: gemini-2.5-pro
         run: |
+          FORCE_FLAG=""
+          if [ "${{ github.event.inputs.force }}" == "true" ] || [ "${{ github.event_name }}" == "schedule" ]; then
+            FORCE_FLAG="--force"
+          fi
+          
           if [ -n "${{ github.event.inputs.date }}" ]; then
             echo "📅 Generating puzzle for ${{ github.event.inputs.date }}"
-            node generate-puzzle-gemini.js --date "${{ github.event.inputs.date }}" --force
+            node generate-puzzle-gemini.js --date "${{ github.event.inputs.date }}" $FORCE_FLAG
           else
             echo "📅 Generating puzzle for tomorrow"
-            node generate-puzzle-gemini.js --force
+            node generate-puzzle-gemini.js $FORCE_FLAG
           fi
       
       - name: 📊 Check if puzzle was generated
