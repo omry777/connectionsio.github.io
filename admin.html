@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Connections Game</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 0;
+        }
+        .admin-container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .puzzle-card {
+            border: 2px solid #ddd;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 15px 0;
+            background: #f8f9fa;
+        }
+        .group-preview {
+            display: inline-block;
+            padding: 8px 15px;
+            margin: 5px;
+            border-radius: 10px;
+            color: white;
+            font-weight: bold;
+        }
+        .generator-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+        .btn-generate {
+            background: white;
+            color: #667eea;
+            font-weight: bold;
+            padding: 15px 40px;
+            font-size: 18px;
+            border-radius: 30px;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .btn-generate:hover {
+            transform: scale(1.05);
+        }
+        .suggestions-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .suggestion-card {
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 10px 0;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="admin-container">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>🎮 לוח בקרה - Connections</h1>
+                <a href="index.html" class="btn btn-secondary">חזרה למשחק</a>
+            </div>
+
+            <!-- Puzzle Generator Section -->
+            <div class="generator-section">
+                <h2 class="text-center mb-3">🤖 מחולל חידות אוטומטי</h2>
+                <p class="text-center">צור חידות חדשות לכל יום באמצעות AI</p>
+                <div class="text-center">
+                    <button class="btn-generate" onclick="generateNewPuzzle()">
+                        🎲 צור חידה ליום הבא
+                    </button>
+                </div>
+                <div id="generatedPuzzle" class="mt-4"></div>
+            </div>
+
+            <!-- Current Puzzles -->
+            <div class="mb-5">
+                <h2>📅 חידות קיימות</h2>
+                <div id="puzzlesList"></div>
+            </div>
+
+            <!-- User Suggestions -->
+            <div class="mb-5">
+                <h2>💡 הצעות מהמשתמשים</h2>
+                <div class="suggestions-list" id="suggestionsList">
+                    <p class="text-muted">טוען הצעות...</p>
+                </div>
+            </div>
+
+            <!-- Statistics Dashboard -->
+            <div>
+                <h2>📊 סטטיסטיקות מערכת</h2>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="stat-box">
+                            <div class="stat-number" id="totalPuzzles">0</div>
+                            <div class="stat-title">חידות במערכת</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-box">
+                            <div class="stat-number" id="totalSuggestions">0</div>
+                            <div class="stat-title">הצעות ממתינות</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-box">
+                            <div class="stat-number" id="totalPlays">0</div>
+                            <div class="stat-title">משחקים היום</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="firebase_config.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { puzzleGenerator } from './puzzleGenerator.js';
+
+        // Initialize Firebase
+        let app, db;
+        try {
+            const config = window.firebaseConfig;
+            if (config && config.apiKey) {
+                app = initializeApp(config);
+                db = getFirestore(app);
+                console.log('Firebase initialized successfully in admin panel');
+            } else {
+                console.log('Firebase not configured');
+            }
+        } catch (error) {
+            console.log('Firebase initialization failed:', error);
+        }
+
+        // Generate new puzzle
+        window.generateNewPuzzle = async function() {
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const dateStr = tomorrow.toISOString().split('T')[0];
+            
+            const puzzle = puzzleGenerator.generatePuzzle(dateStr);
+            
+            const resultDiv = document.getElementById('generatedPuzzle');
+            resultDiv.innerHTML = `
+                <div class="puzzle-card" style="background: white; color: #333;">
+                    <h4>חידה חדשה ליום ${dateStr}</h4>
+                    <div class="mt-3">
+                        ${puzzle.groups.map(group => `
+                            <div class="mb-3">
+                                <div class="group-preview" style="background-color: ${group.color}">
+                                    ${group.words.join(', ')}
+                                </div>
+                                <div><strong>הסבר:</strong> ${group.explanation}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="text-center mt-4">
+                        <button class="btn btn-success" onclick="savePuzzle(${JSON.stringify(puzzle).replace(/"/g, '&quot;')})">
+                            ✅ שמור חידה
+                        </button>
+                        <button class="btn btn-warning" onclick="generateNewPuzzle()">
+                            🔄 צור אחרת
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Save puzzle
+        window.savePuzzle = async function(puzzle) {
+            try {
+                // Read current puzzles
+                const response = await fetch('puzzles.json');
+                const data = await response.json();
+                
+                // Check if puzzle for this date already exists
+                const existingIndex = data.puzzles.findIndex(p => p.date === puzzle.date);
+                if (existingIndex >= 0) {
+                    data.puzzles[existingIndex] = puzzle;
+                } else {
+                    data.puzzles.push(puzzle);
+                }
+                
+                // Sort by date
+                data.puzzles.sort((a, b) => new Date(a.date) - new Date(b.date));
+                
+                // Download as JSON
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'puzzles.json';
+                a.click();
+                
+                alert('החידה נוצרה! הורד את הקובץ puzzles.json והעלה אותו לשרת');
+                loadPuzzles();
+            } catch (error) {
+                console.error('Error saving puzzle:', error);
+                alert('שגיאה בשמירת החידה');
+            }
+        }
+
+        // Load existing puzzles
+        async function loadPuzzles() {
+            try {
+                const response = await fetch('puzzles.json');
+                const data = await response.json();
+                
+                const puzzlesList = document.getElementById('puzzlesList');
+                document.getElementById('totalPuzzles').textContent = data.puzzles.length;
+                
+                puzzlesList.innerHTML = data.puzzles.map(puzzle => `
+                    <div class="puzzle-card">
+                        <h5>📅 ${puzzle.date}</h5>
+                        <div>
+                            ${puzzle.groups.map(group => `
+                                <span class="group-preview" style="background-color: ${group.color}">
+                                    ${group.explanation}
+                                </span>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading puzzles:', error);
+            }
+        }
+
+        // Load user suggestions
+        async function loadSuggestions() {
+            if (!db) {
+                document.getElementById('suggestionsList').innerHTML = 
+                    '<p class="text-muted">Firebase לא מוגדר - לא ניתן לטעון הצעות</p>';
+                return;
+            }
+            
+            try {
+                const suggestionsRef = collection(db, "suggested_ideas");
+                const q = query(suggestionsRef, orderBy("timestamp", "desc"), limit(20));
+                const querySnapshot = await getDocs(q);
+                
+                const suggestionsList = document.getElementById('suggestionsList');
+                document.getElementById('totalSuggestions').textContent = querySnapshot.size;
+                
+                if (querySnapshot.empty) {
+                    suggestionsList.innerHTML = '<p class="text-muted">אין הצעות חדשות</p>';
+                    return;
+                }
+                
+                suggestionsList.innerHTML = '';
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const suggestionCard = document.createElement('div');
+                    suggestionCard.className = 'suggestion-card';
+                    suggestionCard.innerHTML = `
+                        <div><strong>מילים:</strong> ${data.words.join(', ')}</div>
+                        <div><strong>קשר:</strong> ${data.connection}</div>
+                        <div><strong>רמת קושי:</strong> ${data.difficulty}</div>
+                        <div class="text-muted small">
+                            ${data.timestamp ? new Date(data.timestamp.toDate()).toLocaleDateString('he-IL') : ''}
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-success" onclick="approveSuggestion('${doc.id}')">
+                                ✅ אשר
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="rejectSuggestion('${doc.id}')">
+                                ❌ דחה
+                            </button>
+                        </div>
+                    `;
+                    suggestionsList.appendChild(suggestionCard);
+                });
+            } catch (error) {
+                console.error('Error loading suggestions:', error);
+                document.getElementById('suggestionsList').innerHTML = 
+                    '<p class="text-danger">שגיאה בטעינת הצעות</p>';
+            }
+        }
+
+        // Initialize admin panel
+        loadPuzzles();
+        loadSuggestions();
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+

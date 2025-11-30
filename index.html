@@ -20,7 +20,13 @@
 <body>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
     <div class="container my-5">
-        <h1 class="hebrew-text" style="text-align: center;">?האם תצליחו לזהות את 4 הקבוצות המסתתרות </h1>
+        <div class="header-section">
+            <h1 class="hebrew-text" style="text-align: center;">?האם תצליחו לזהות את 4 הקבוצות המסתתרות </h1>
+            <div class="header-buttons">
+                <button id="statsButton" class="btn btn-info" onclick="showStatsModal()">📊 סטטיסטיקות</button>
+                <button class="btn btn-secondary" onclick="showHowToPlay()">❓ איך משחקים</button>
+            </div>
+        </div>
 
         <!-- Game Container -->
         <div class="row justify-content-center">
@@ -40,10 +46,10 @@
 
         <!-- Game Controls -->
         <div class="controls" id="controls">
-            <button class="btn btn-primary mx-2" onclick="shuffleGrid()">Shuffle</button>
-            <button class="btn btn-primary mx-2" onclick="deselectAll()">Deselect All</button>
+            <button class="btn btn-primary mx-2" onclick="shuffleGrid()">🔀 ערבב</button>
+            <button class="btn btn-primary mx-2" onclick="deselectAll()">❌ בטל בחירה</button>
             <button class="btn btn-success mx-2" data-bs-toggle="modal" data-bs-target="#formModal" onclick="reopenForm()">
-                Submit Your own Ideas!
+                💡 שלח רעיונות משלך
             </button>
         </div>
 
@@ -79,7 +85,13 @@
                         </div>
                         <div class="mb-3">
                           <label for="difficulty" class="form-label hebrew-text">:רמת קושי</label>
-                          <input type="text" class="form-control" id="difficulty" required>
+                          <select class="form-select" id="difficulty" required>
+                            <option value="">בחר רמת קושי</option>
+                            <option value="1">1 - קל</option>
+                            <option value="2">2 - בינוני</option>
+                            <option value="3">3 - קשה</option>
+                            <option value="4">4 - מאוד קשה</option>
+                          </select>
                         </div>
                         <button type="submit" class="btn btn-primary hebrew-text">שליחה</button>
                         </form>
@@ -92,6 +104,42 @@
     <div id="successSubmitMessage" style="display: none; text-align: center;">
       <p>תודה על שליחת הרעיון !🎉</p>
     </div>
+    
+    <!-- How to Play Modal -->
+    <div id="howToPlayModal" class="stats-modal" style="display: none;">
+      <div class="stats-modal-content">
+        <span class="close-modal" onclick="document.getElementById('howToPlayModal').style.display='none'">&times;</span>
+        <div class="hebrew-text" style="padding: 20px; text-align: right;">
+          <h2>איך משחקים? 🎮</h2>
+          <div style="line-height: 2;">
+            <p><strong>המטרה:</strong> למצוא 4 קבוצות של 4 מילים שיש להן קשר משותף.</p>
+            <p><strong>איך לשחק:</strong></p>
+            <ol style="padding-right: 20px;">
+              <li>בחר 4 מילים שלדעתך שייכות לאותה קבוצה</li>
+              <li>אם צדקת - הקבוצה תתגלה!</li>
+              <li>אם טעית - תאבד נקודת חיים</li>
+              <li>יש לך 4 נקודות חיים בסך הכל</li>
+              <li>נסה למצוא את כל 4 הקבוצות לפני שנגמרות נקודות החיים</li>
+            </ol>
+            <p><strong>רמזים:</strong></p>
+            <ul style="padding-right: 20px;">
+              <li>חפש קשרים לא מובנים מאליהם</li>
+              <li>לפעמים המילים יכולות להשתייך ליותר מקבוצה אחת</li>
+              <li>התחל מהקבוצה הכי בטוחה</li>
+            </ul>
+            <p style="margin-top: 20px;"><strong>בהצלחה! 🍀</strong></p>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <script>
+      // Show how to play
+      window.showHowToPlay = function() {
+        document.getElementById('howToPlayModal').style.display = 'flex';
+      }
+    </script>
+    
     <script src="firebase_config.js"></script>
     <!-- Your Game Script -->
     <script type="module" src="script.js"></script>

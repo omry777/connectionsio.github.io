@@ -1,0 +1,25 @@
+{
+  "name": "connections-puzzle-generator",
+  "version": "1.0.0",
+  "description": "AI-powered Hebrew puzzle generator for Connections game",
+  "type": "module",
+  "scripts": {
+    "generate": "node generate-puzzle-gemini.js",
+    "generate-week": "node generate-puzzle-gemini.js --days 7",
+    "preview": "node generate-puzzle-gemini.js --preview",
+    "stats": "node generate-puzzle-gemini.js --stats"
+  },
+  "keywords": [
+    "puzzle",
+    "hebrew",
+    "connections",
+    "gemini",
+    "ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.2.1",
+    "dotenv": "^16.3.1"
+  }
+}
