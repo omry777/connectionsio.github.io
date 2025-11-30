@@ -9,9 +9,14 @@ on:
   workflow_dispatch:
     inputs:
       date:
-        description: 'Generate puzzle for specific date (YYYY-MM-DD)'
+        description: 'Start date for puzzle generation (YYYY-MM-DD, default: tomorrow)'
         required: false
         type: string
+      days:
+        description: 'Number of days to generate (1-30, default: 1)'
+        required: false
+        type: number
+        default: 1
       force:
         description: 'Force overwrite if puzzle already exists'
         required: false
@@ -49,12 +54,15 @@ jobs:
             FORCE_FLAG="--force"
           fi
           
+          DAYS="${{ github.event.inputs.days }}"
+          DAYS=${DAYS:-1}
+          
           if [ -n "${{ github.event.inputs.date }}" ]; then
-            echo "📅 Generating puzzle for ${{ github.event.inputs.date }}"
-            node generate-puzzle-gemini.js --date "${{ github.event.inputs.date }}" $FORCE_FLAG
+            echo "📅 Generating $DAYS puzzle(s) starting from ${{ github.event.inputs.date }}"
+            node generate-puzzle-gemini.js --date "${{ github.event.inputs.date }}" --days $DAYS $FORCE_FLAG
           else
-            echo "📅 Generating puzzle for tomorrow"
-            node generate-puzzle-gemini.js $FORCE_FLAG
+            echo "📅 Generating $DAYS puzzle(s) starting from tomorrow"
+            node generate-puzzle-gemini.js --days $DAYS $FORCE_FLAG
           fi
       
       - name: 📊 Check if puzzle was generated
