@@ -38,10 +38,10 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.date }}" ]; then
             echo "📅 Generating puzzle for ${{ github.event.inputs.date }}"
-            node generate-puzzle-gemini.js --date "${{ github.event.inputs.date }}"
+            node generate-puzzle-gemini.js --date "${{ github.event.inputs.date }}" --force
           else
             echo "📅 Generating puzzle for tomorrow"
-            node generate-puzzle-gemini.js
+            node generate-puzzle-gemini.js --force
           fi
       
       - name: 📊 Check if puzzle was generated
