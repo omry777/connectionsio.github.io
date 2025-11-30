@@ -55,7 +55,7 @@ code .env
 Add this:
 ```bash
 GEMINI_API_KEY=AIzaSyD...your-actual-key-here...
-GEMINI_MODEL=gemini-pro
+GEMINI_MODEL=gemini-2.5-pro
 ```
 
 3. **Save and close**

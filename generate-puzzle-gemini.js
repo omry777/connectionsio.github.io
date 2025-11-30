@@ -25,7 +25,7 @@ const __dirname = path.dirname(__filename);
 // Configuration
 const CONFIG = {
   apiKey: process.env.GEMINI_API_KEY,
-  model: process.env.GEMINI_MODEL || 'gemini-pro',
+  model: process.env.GEMINI_MODEL || 'gemini-2.5-pro',
   puzzlesFile: path.join(__dirname, 'puzzles.json')
 };
 
