@@ -1,7 +1,19 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, collection, addDoc, doc, getDoc, setDoc, increment } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, doc, getDoc, setDoc, increment, query, orderBy, limit, getDocs, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { analytics } from './analytics.js';
 import { puzzleGenerator } from './puzzleGenerator.js';
+
+// Generate or get unique user ID
+function getUserId() {
+  let userId = localStorage.getItem('connections_user_id');
+  if (!userId) {
+    userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('connections_user_id', userId);
+  }
+  return userId;
+}
+
+const currentUserId = getUserId();
 
 let puzzle = {};
 let selectedItems = [];
@@ -31,17 +43,18 @@ function endGame(won = false) {
   // Record game result
   const stats = analytics.recordGameEnd(won, mistakesCount, timeElapsed);
   
-  // Update global statistics in Firebase
-  updateGlobalStats(won, mistakesCount);
+  // Update global statistics in Firebase (both global and user-specific)
+  updateGlobalStats(won, mistakesCount, timeElapsed);
+  saveUserGameResult(won, mistakesCount, timeElapsed);
   
   if (won) {
     showVictoryModal(stats, timeElapsed);
+    updateLiveCounter();
   } else {
-    // Show the "Better luck next time" message
+    // Show the failure modal instead of alert
     setTimeout(() => {
-      alert('הפעם זה לא הלך, בהצלחה ביום הבא');
+      showFailureModal();
       revealSolutions();
-      showStatsModal();
     }, 500);
   }
 }
@@ -95,8 +108,11 @@ async function loadTodaysPuzzle() {
       shuffleGrid();
       updateStatsDisplay();
       loadGlobalStats();
+      
+      // Show live counter after a short delay
+      setTimeout(() => updateLiveCounter(), 1000);
     } else {
-      alert('No puzzle found for today.');
+      showNoPuzzleMessage();
     }
   } catch (error) {
     console.error('Error loading puzzle:', error);
@@ -165,7 +181,7 @@ function checkGroup() {
       setTimeout(() => endGame(true), 1000);
     }
   } else {
-    alert('זו לא הקבוצה עליה חשבנו, נסה שוב!');
+    showWrongNotification();
     deselectAll();
     markMistake();
   }
@@ -274,6 +290,77 @@ function showGroupExplanation(group) {
   }, 2000);
 }
 
+// Show wrong answer notification (instead of alert)
+function showWrongNotification() {
+  const existing = document.querySelector('.wrong-notification');
+  if (existing) existing.remove();
+  
+  const notification = document.createElement('div');
+  notification.className = 'wrong-notification';
+  notification.innerHTML = `
+    <div>❌ זו לא הקבוצה עליה חשבנו</div>
+    <div style="font-size: 14px; margin-top: 5px;">נסה שוב!</div>
+  `;
+  document.body.appendChild(notification);
+  
+  setTimeout(() => notification.classList.add('show'), 10);
+  setTimeout(() => {
+    notification.classList.remove('show');
+    setTimeout(() => notification.remove(), 300);
+  }, 2000);
+}
+
+// Show failure modal (instead of alert)
+function showFailureModal() {
+  const modal = document.getElementById('failureModal') || createFailureModal();
+  modal.querySelector('.failure-content').innerHTML = `
+    <h2 class="hebrew-text">😔 הפעם לא הצלחנו</h2>
+    <p class="hebrew-text">אל דאגה, מחר יש חידה חדשה!</p>
+    <p class="hebrew-text" style="font-size: 14px; opacity: 0.8;">הקבוצות שנותרו יוצגו למטה</p>
+    <div style="margin-top: 25px;">
+      <button class="btn btn-light" onclick="document.getElementById('failureModal').style.display='none'; showStatsModal();">
+        📊 הצג סטטיסטיקות
+      </button>
+      <button class="btn btn-warning" onclick="document.getElementById('failureModal').style.display='none';">
+        👀 צפה בפתרונות
+      </button>
+    </div>
+  `;
+  modal.style.display = 'flex';
+}
+
+// Create failure modal if it doesn't exist
+function createFailureModal() {
+  const modal = document.createElement('div');
+  modal.id = 'failureModal';
+  modal.className = 'failure-modal';
+  modal.innerHTML = '<div class="failure-content"></div>';
+  document.body.appendChild(modal);
+  
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.style.display = 'none';
+    }
+  });
+  
+  return modal;
+}
+
+// Show no puzzle available message (instead of alert)
+function showNoPuzzleMessage() {
+  const container = document.querySelector('.container');
+  const message = document.createElement('div');
+  message.className = 'already-played-message hebrew-text';
+  message.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+  message.innerHTML = `
+    <h3>🎮 אין חידה להיום</h3>
+    <p>החידות החדשות מתעדכנות מדי יום!</p>
+    <p style="font-size: 14px; opacity: 0.8;">נסה לחזור מחר או בדוק את החיבור לאינטרנט</p>
+    <button class="btn btn-light" onclick="location.reload()">🔄 נסה שוב</button>
+  `;
+  container.prepend(message);
+}
+
 // Show victory modal
 function showVictoryModal(stats, timeElapsed) {
   const modal = document.getElementById('victoryModal') || createVictoryModal();
@@ -364,7 +451,7 @@ function createStatsModal() {
 }
 
 // Update stats modal content
-function updateStatsModalContent() {
+async function updateStatsModalContent() {
   const stats = analytics.getStats();
   const distribution = analytics.getResultsDistribution();
   const recentGames = analytics.getRecentGames();
@@ -422,9 +509,64 @@ function updateStatsModalContent() {
     </div>
     
     <div id="globalStatsSection" class="global-stats-section hebrew-text">
-      <h3>סטטיסטיקות גלובליות - היום</h3>
+      <h3>📈 סטטיסטיקות גלובליות - היום</h3>
       <div id="globalStatsContent">טוען...</div>
     </div>
+    
+    <div id="leaderboardSection" class="leaderboard-section hebrew-text">
+      <h3>🏆 טבלת המובילים היום</h3>
+      <div id="leaderboardContent">טוען...</div>
+    </div>
+  `;
+  
+  // Load leaderboard asynchronously
+  loadLeaderboardContent();
+}
+
+// Load and render leaderboard content
+async function loadLeaderboardContent() {
+  const leaderboard = await loadTodayLeaderboard();
+  const leaderboardContent = document.getElementById('leaderboardContent');
+  
+  if (!leaderboardContent) return;
+  
+  if (leaderboard.length === 0) {
+    leaderboardContent.innerHTML = '<p style="text-align: center; color: #666;">אין עדיין תוצאות להיום</p>';
+    return;
+  }
+  
+  const getMedal = (rank) => {
+    if (rank === 1) return '🥇';
+    if (rank === 2) return '🥈';
+    if (rank === 3) return '🥉';
+    return rank;
+  };
+  
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+  
+  leaderboardContent.innerHTML = `
+    <table class="leaderboard-table">
+      <thead>
+        <tr>
+          <th>דירוג</th>
+          <th>טעויות</th>
+          <th>זמן</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${leaderboard.map(entry => `
+          <tr class="${entry.rank <= 3 ? 'rank-' + entry.rank : ''} ${entry.isCurrentUser ? 'current-user' : ''}">
+            <td><span class="medal">${getMedal(entry.rank)}</span>${entry.isCurrentUser ? ' (אתה!)' : ''}</td>
+            <td>${entry.mistakes}</td>
+            <td>${formatTime(entry.time)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
   `;
 }
 
@@ -453,7 +595,7 @@ function showAlreadyPlayedMessage(todayStats) {
 }
 
 // Update global statistics in Firebase
-async function updateGlobalStats(won, mistakes) {
+async function updateGlobalStats(won, mistakes, timeElapsed = 0) {
   if (!db) {
     console.log('Firebase not configured - skipping global stats update');
     return;
@@ -467,11 +609,113 @@ async function updateGlobalStats(won, mistakes) {
       totalPlays: increment(1),
       totalWins: increment(won ? 1 : 0),
       totalMistakes: increment(mistakes),
+      totalTime: increment(timeElapsed),
       lastUpdated: new Date()
     }, { merge: true });
     console.log('Global stats updated successfully');
   } catch (error) {
     console.log('Could not update global stats:', error);
+  }
+}
+
+// Save individual user game result to Firebase
+async function saveUserGameResult(won, mistakes, timeElapsed) {
+  if (!db) {
+    console.log('Firebase not configured - skipping user stats save');
+    return;
+  }
+  
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const userGameRef = doc(db, 'userGames', `${today}_${currentUserId}`);
+    
+    await setDoc(userGameRef, {
+      date: today,
+      odataUri: currentUserId,
+      won: won,
+      mistakes: mistakes,
+      timeElapsed: timeElapsed,
+      timestamp: new Date(),
+      // Calculate score: lower is better (mistakes * 100 + time)
+      score: (mistakes * 100) + timeElapsed
+    });
+    console.log('User game result saved successfully');
+  } catch (error) {
+    console.log('Could not save user game result:', error);
+  }
+}
+
+// Create live counter element
+function createLiveCounter() {
+  const counter = document.createElement('div');
+  counter.id = 'liveCounter';
+  counter.className = 'live-counter hebrew-text';
+  counter.innerHTML = `
+    🎉 כבר <span class="counter-number" id="successCount">0</span> אנשים הצליחו לפתור את החידה היום!
+  `;
+  document.body.appendChild(counter);
+  return counter;
+}
+
+// Update live counter
+async function updateLiveCounter() {
+  if (!db) return;
+  
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const statsRef = doc(db, 'dailyStats', today);
+    const statsSnap = await getDoc(statsRef);
+    
+    let counter = document.getElementById('liveCounter') || createLiveCounter();
+    
+    if (statsSnap.exists()) {
+      const data = statsSnap.data();
+      const successCount = data.totalWins || 0;
+      document.getElementById('successCount').textContent = successCount;
+      counter.classList.add('visible');
+    }
+  } catch (error) {
+    console.log('Could not update live counter:', error);
+  }
+}
+
+// Load today's leaderboard
+async function loadTodayLeaderboard() {
+  if (!db) {
+    return [];
+  }
+  
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const gamesRef = collection(db, 'userGames');
+    const q = query(
+      gamesRef,
+      where('date', '==', today),
+      where('won', '==', true),
+      orderBy('score', 'asc'),
+      limit(10)
+    );
+    
+    const snapshot = await getDocs(q);
+    const leaderboard = [];
+    let rank = 1;
+    
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      leaderboard.push({
+        rank: rank++,
+        odataUri: data.odataUri,
+        mistakes: data.mistakes,
+        time: data.timeElapsed,
+        score: data.score,
+        isCurrentUser: data.odataUri === currentUserId
+      });
+    });
+    
+    return leaderboard;
+  } catch (error) {
+    console.log('Could not load leaderboard:', error);
+    return [];
   }
 }
 
@@ -493,19 +737,45 @@ async function loadGlobalStats() {
     
     if (statsSnap.exists()) {
       const data = statsSnap.data();
+      const totalPlays = data.totalPlays || 0;
+      const totalWins = data.totalWins || 0;
+      const totalMistakes = data.totalMistakes || 0;
+      const totalTime = data.totalTime || 0;
+      const avgTime = totalWins > 0 ? Math.floor(totalTime / totalWins) : 0;
+      const avgMins = Math.floor(avgTime / 60);
+      const avgSecs = avgTime % 60;
+      
       const globalStatsContent = document.getElementById('globalStatsContent');
       if (globalStatsContent) {
         globalStatsContent.innerHTML = `
-          <div class="global-stat">
-            <span>סך משחקים:</span> <strong>${data.totalPlays || 0}</strong>
-          </div>
-          <div class="global-stat">
-            <span>אחוז הצלחה:</span> <strong>${data.totalPlays > 0 ? Math.round((data.totalWins / data.totalPlays) * 100) : 0}%</strong>
-          </div>
-          <div class="global-stat">
-            <span>ממוצע טעויות:</span> <strong>${data.totalPlays > 0 ? (data.totalMistakes / data.totalPlays).toFixed(1) : 0}</strong>
+          <div class="stats-chart">
+            <div class="chart-bar-container">
+              <div class="chart-label">שיחקו:</div>
+              <div style="font-weight: bold; font-size: 24px; color: #667eea;">${totalPlays}</div>
+            </div>
+            <div class="chart-bar-container">
+              <div class="chart-label">הצליחו:</div>
+              <div style="font-weight: bold; font-size: 24px; color: #4caf50;">${totalWins}</div>
+              <div style="color: #666; margin-right: 10px;">(${totalPlays > 0 ? Math.round((totalWins / totalPlays) * 100) : 0}%)</div>
+            </div>
+            <div class="chart-bar-container">
+              <div class="chart-label">ממוצע טעויות:</div>
+              <div style="font-weight: bold; font-size: 20px; color: #f44336;">${totalPlays > 0 ? (totalMistakes / totalPlays).toFixed(1) : 0}</div>
+            </div>
+            <div class="chart-bar-container">
+              <div class="chart-label">זמן ממוצע:</div>
+              <div style="font-weight: bold; font-size: 20px; color: #ff9800;">${avgMins}:${avgSecs.toString().padStart(2, '0')}</div>
+            </div>
           </div>
         `;
+      }
+      
+      // Also update live counter
+      updateLiveCounter();
+    } else {
+      const globalStatsContent = document.getElementById('globalStatsContent');
+      if (globalStatsContent) {
+        globalStatsContent.innerHTML = '<p style="text-align: center; color: #666;">אין עדיין נתונים להיום</p>';
       }
     }
   } catch (error) {
