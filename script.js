@@ -19,6 +19,24 @@ function getLocalUserId() {
 
 const localUserId = getLocalUserId();
 
+// Nickname management
+function getNickname() {
+  return localStorage.getItem('connections_nickname');
+}
+
+function setNickname(nickname) {
+  localStorage.setItem('connections_nickname', nickname);
+}
+
+function generateRandomNickname() {
+  const adjectives = ['שמח', 'חכם', 'מהיר', 'אמיץ', 'חזק', 'נמר', 'נשר', 'אריה', 'זריז', 'גיבור', 'קסום', 'מבריק'];
+  const nouns = ['כוכב', 'ירח', 'שמש', 'ענן', 'רוח', 'גל', 'הר', 'נהר', 'עץ', 'פרח', 'ציפור', 'דג'];
+  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  const num = Math.floor(Math.random() * 99) + 1;
+  return `${adj}${noun}${num}`;
+}
+
 let puzzle = {};
 let selectedItems = [];
 let currentGroups = [];
@@ -52,15 +70,29 @@ function endGame(won = false) {
   if (!alreadyPlayedToday) {
     stats = analytics.recordGameEnd(won, mistakesCount, timeElapsed);
     
-    // Update global statistics in Firebase (only first attempt)
-    updateGlobalStats(won, mistakesCount, timeElapsed);
-    saveUserGameResult(won, mistakesCount, timeElapsed);
+    // Check if user has a nickname, if not prompt for one before saving
+    if (!getNickname()) {
+      showNicknamePrompt((nickname) => {
+        // After nickname is set, save to Firebase
+        updateGlobalStats(won, mistakesCount, timeElapsed);
+        saveUserGameResult(won, mistakesCount, timeElapsed);
+        finishEndGame(won, stats, timeElapsed, alreadyPlayedToday);
+      });
+    } else {
+      // Nickname exists, save directly
+      updateGlobalStats(won, mistakesCount, timeElapsed);
+      saveUserGameResult(won, mistakesCount, timeElapsed);
+      finishEndGame(won, stats, timeElapsed, alreadyPlayedToday);
+    }
   } else {
     // For replay, just get existing stats without recording
     stats = analytics.getStats();
     console.log('Replay detected - not counting in statistics');
+    finishEndGame(won, stats, timeElapsed, alreadyPlayedToday);
   }
-  
+}
+
+function finishEndGame(won, stats, timeElapsed, alreadyPlayedToday) {
   if (won) {
     showVictoryModal(stats, timeElapsed, alreadyPlayedToday);
     if (!alreadyPlayedToday) {
@@ -385,6 +417,66 @@ function showNoPuzzleMessage() {
   container.prepend(message);
 }
 
+// Show nickname prompt modal
+function showNicknamePrompt(callback) {
+  const modal = document.createElement('div');
+  modal.id = 'nicknameModal';
+  modal.className = 'nickname-modal';
+  
+  const randomNick = generateRandomNickname();
+  
+  modal.innerHTML = `
+    <div class="nickname-content hebrew-text">
+      <h2>🏆 הכנס כינוי לטבלת המובילים</h2>
+      <p>השם שלך יופיע בלידרבורד!</p>
+      <input type="text" id="nicknameInput" class="nickname-input" placeholder="הכנס כינוי..." maxlength="20" dir="rtl">
+      <div class="nickname-buttons">
+        <button class="btn btn-primary" id="saveNicknameBtn">💾 שמור</button>
+        <button class="btn btn-secondary" id="randomNicknameBtn">🎲 כינוי אקראי</button>
+        <button class="btn btn-ghost" id="skipNicknameBtn">דלג (אנונימי)</button>
+      </div>
+      <p class="nickname-hint">* ניתן לשנות בהמשך בהגדרות</p>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  const input = document.getElementById('nicknameInput');
+  const saveBtn = document.getElementById('saveNicknameBtn');
+  const randomBtn = document.getElementById('randomNicknameBtn');
+  const skipBtn = document.getElementById('skipNicknameBtn');
+  
+  // Focus input
+  setTimeout(() => input.focus(), 100);
+  
+  // Save nickname
+  saveBtn.onclick = () => {
+    const nickname = input.value.trim() || 'אנונימי';
+    setNickname(nickname);
+    modal.remove();
+    callback(nickname);
+  };
+  
+  // Generate random nickname
+  randomBtn.onclick = () => {
+    input.value = generateRandomNickname();
+  };
+  
+  // Skip - use anonymous
+  skipBtn.onclick = () => {
+    setNickname('אנונימי');
+    modal.remove();
+    callback('אנונימי');
+  };
+  
+  // Enter key to save
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      saveBtn.click();
+    }
+  };
+}
+
 // Show victory modal
 function showVictoryModal(stats, timeElapsed, isReplay = false) {
   const modal = document.getElementById('victoryModal') || createVictoryModal();
@@ -585,6 +677,7 @@ async function loadLeaderboardContent() {
       <thead>
         <tr>
           <th>דירוג</th>
+          <th>שם</th>
           <th>טעויות</th>
           <th>זמן</th>
         </tr>
@@ -592,7 +685,8 @@ async function loadLeaderboardContent() {
       <tbody>
         ${leaderboard.map(entry => `
           <tr class="${entry.rank <= 3 ? 'rank-' + entry.rank : ''} ${entry.isCurrentUser ? 'current-user' : ''}">
-            <td><span class="medal">${getMedal(entry.rank)}</span>${entry.isCurrentUser ? ' (אתה!)' : ''}</td>
+            <td><span class="medal">${getMedal(entry.rank)}</span></td>
+            <td class="nickname-cell">${entry.nickname}${entry.isCurrentUser ? ' <small>(אתה!)</small>' : ''}</td>
             <td>${entry.mistakes}</td>
             <td>${formatTime(entry.time)}</td>
           </tr>
@@ -742,9 +836,12 @@ async function saveUserGameResult(won, mistakes, timeElapsed) {
     // Path: userDailyGames/{uid}/days/{date} - matches security rules
     const userGameRef = doc(db, 'userDailyGames', firebaseUserId, 'days', today);
     
+    const nickname = getNickname() || 'אנונימי';
+    
     await setDoc(userGameRef, {
       date: today,
       odataUri: firebaseUserId,
+      nickname: nickname,
       won: won,
       mistakes: mistakes,
       timeElapsed: timeElapsed,
@@ -838,6 +935,7 @@ async function loadTodayLeaderboard() {
       leaderboard.push({
         rank: rank++,
         odataUri: odataUri,
+        nickname: data.nickname || 'אנונימי',
         mistakes: data.mistakes,
         time: data.timeElapsed,
         score: data.score,
