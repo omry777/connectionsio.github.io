@@ -758,16 +758,28 @@ async function saveUserGameResult(won, mistakes, timeElapsed) {
   }
 }
 
-// Create live counter element
+// Create live counter badge (small, next to stats button)
 function createLiveCounter() {
-  const counter = document.createElement('div');
-  counter.id = 'liveCounter';
-  counter.className = 'live-counter hebrew-text';
-  counter.innerHTML = `
-    🎉 כבר <span class="counter-number" id="successCount">0</span> אנשים הצליחו לפתור את החידה היום!
-  `;
-  document.body.appendChild(counter);
-  return counter;
+  const statsButton = document.getElementById('statsButton');
+  if (!statsButton) return null;
+  
+  // Create wrapper for button + badge
+  let wrapper = statsButton.parentElement.querySelector('.stats-wrapper');
+  if (!wrapper) {
+    wrapper = document.createElement('div');
+    wrapper.className = 'stats-wrapper';
+    statsButton.parentElement.insertBefore(wrapper, statsButton);
+    wrapper.appendChild(statsButton);
+  }
+  
+  const badge = document.createElement('div');
+  badge.id = 'liveCounter';
+  badge.className = 'live-counter-badge';
+  badge.innerHTML = `<span id="successCount">0</span>`;
+  badge.title = 'אנשים שהצליחו היום';
+  wrapper.appendChild(badge);
+  
+  return badge;
 }
 
 // Update live counter
@@ -780,12 +792,15 @@ async function updateLiveCounter() {
     const statsSnap = await getDoc(statsRef);
     
     let counter = document.getElementById('liveCounter') || createLiveCounter();
+    if (!counter) return;
     
     if (statsSnap.exists()) {
       const data = statsSnap.data();
       const successCount = data.totalWins || 0;
-      document.getElementById('successCount').textContent = successCount;
-      counter.classList.add('visible');
+      if (successCount > 0) {
+        document.getElementById('successCount').textContent = successCount;
+        counter.classList.add('visible');
+      }
     }
   } catch (error) {
     console.log('Could not update live counter:', error);
