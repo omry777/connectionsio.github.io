@@ -1,10 +1,14 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, collection, addDoc, doc, getDoc, setDoc, increment, query, orderBy, limit, getDocs, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, collectionGroup, addDoc, doc, getDoc, setDoc, increment, query, orderBy, limit, getDocs, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { analytics } from './analytics.js';
 import { puzzleGenerator } from './puzzleGenerator.js';
 
-// Generate or get unique user ID
-function getUserId() {
+// Get Firebase Auth UID (set after anonymous sign-in)
+let firebaseUserId = null;
+
+// Legacy local user ID (for analytics only, not for Firebase)
+function getLocalUserId() {
   let userId = localStorage.getItem('connections_user_id');
   if (!userId) {
     userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -13,7 +17,7 @@ function getUserId() {
   return userId;
 }
 
-const currentUserId = getUserId();
+const localUserId = getLocalUserId();
 
 let puzzle = {};
 let selectedItems = [];
@@ -708,13 +712,19 @@ async function saveUserGameResult(won, mistakes, timeElapsed) {
     return;
   }
   
+  if (!firebaseUserId) {
+    console.log('Not authenticated - skipping user stats save');
+    return;
+  }
+  
   try {
     const today = new Date().toISOString().split('T')[0];
-    const userGameRef = doc(db, 'userGames', `${today}_${currentUserId}`);
+    // Path: userDailyGames/{uid}/days/{date} - matches security rules
+    const userGameRef = doc(db, 'userDailyGames', firebaseUserId, 'days', today);
     
     await setDoc(userGameRef, {
       date: today,
-      odataUri: currentUserId,
+      odataUri: firebaseUserId,
       won: won,
       mistakes: mistakes,
       timeElapsed: timeElapsed,
@@ -770,9 +780,10 @@ async function loadTodayLeaderboard() {
   
   try {
     const today = new Date().toISOString().split('T')[0];
-    const gamesRef = collection(db, 'userGames');
+    // Use collectionGroup to query across all users' "days" subcollections
+    const daysRef = collectionGroup(db, 'days');
     const q = query(
-      gamesRef,
+      daysRef,
       where('date', '==', today),
       where('won', '==', true),
       orderBy('score', 'asc'),
@@ -783,15 +794,19 @@ async function loadTodayLeaderboard() {
     const leaderboard = [];
     let rank = 1;
     
-    snapshot.forEach((doc) => {
-      const data = doc.data();
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      // Get the user ID from the document path: userDailyGames/{uid}/days/{date}
+      const pathParts = docSnap.ref.path.split('/');
+      const odataUri = pathParts[1]; // The uid part
+      
       leaderboard.push({
         rank: rank++,
-        odataUri: data.odataUri,
+        odataUri: odataUri,
         mistakes: data.mistakes,
         time: data.timeElapsed,
         score: data.score,
-        isCurrentUser: data.odataUri === currentUserId
+        isCurrentUser: odataUri === firebaseUserId
       });
     });
     
@@ -867,13 +882,27 @@ async function loadGlobalStats() {
 }
 
 // Initialize Firebase
-let app, db;
+let app, db, auth;
 try {
   // Access firebaseConfig from window object (loaded via script tag)
   const config = window.firebaseConfig;
   if (config && config.apiKey && config.apiKey !== 'YOUR_API_KEY') {
     app = initializeApp(config);
     db = getFirestore(app);
+    auth = getAuth(app);
+    signInAnonymously(auth).catch((err) => {
+      console.error("Anon auth failed", err);
+    });
+    
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        firebaseUserId = user.uid;
+        console.log("Firebase Auth UID:", firebaseUserId);
+      } else {
+        firebaseUserId = null;
+        console.log("Signed out");
+      }
+    });
     console.log('Firebase initialized successfully');
   } else {
     console.log('Firebase not configured - using local features only');
