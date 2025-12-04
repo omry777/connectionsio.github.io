@@ -27,6 +27,28 @@ function getNickname() {
 function setNickname(nickname) {
   localStorage.setItem('connections_nickname', nickname);
   updateNicknameDisplay();
+  
+  // Also save to Firebase for centralized nickname lookup
+  saveNicknameToFirebase(nickname);
+}
+
+// Save nickname to Firebase users collection
+async function saveNicknameToFirebase(nickname) {
+  if (!db) return;
+  
+  const authReady = await waitForAuth(5000);
+  if (!authReady) return;
+  
+  try {
+    const userRef = doc(db, 'users', firebaseUserId);
+    await setDoc(userRef, {
+      nickname: nickname,
+      updatedAt: new Date()
+    }, { merge: true });
+    console.log('Nickname saved to Firebase');
+  } catch (error) {
+    console.log('Could not save nickname to Firebase:', error);
+  }
 }
 
 function generateRandomNickname() {
@@ -269,6 +291,27 @@ async function loadTodaysPuzzle() {
 // Initialize game
 loadTodaysPuzzle();
 updateNicknameDisplay();
+
+// Sync local nickname to Firebase (for existing users who set nickname before this update)
+setTimeout(async () => {
+  const localNickname = getNickname();
+  if (localNickname && db) {
+    const authReady = await waitForAuth(5000);
+    if (authReady) {
+      // Check if user already has nickname in Firebase
+      try {
+        const userRef = doc(db, 'users', firebaseUserId);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists() || !userSnap.data().nickname) {
+          // Sync local nickname to Firebase
+          saveNicknameToFirebase(localNickname);
+        }
+      } catch (e) {
+        // Ignore errors
+      }
+    }
+  }
+}, 2000);
 
 // Load puzzle words into grid
 function loadPuzzle() {
@@ -1014,31 +1057,72 @@ async function loadTodayLeaderboard() {
     );
     
     const snapshot = await getDocs(q);
-    const leaderboard = [];
-    let rank = 1;
+    const entries = [];
+    const userIds = new Set();
     
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
       // Get the user ID from the document path: userDailyGames/{uid}/days/{date}
       const pathParts = docSnap.ref.path.split('/');
       const odataUri = pathParts[1]; // The uid part
+      userIds.add(odataUri);
       
-      leaderboard.push({
-        rank: rank++,
+      entries.push({
         odataUri: odataUri,
-        nickname: data.nickname || 'אנונימי',
         mistakes: data.mistakes,
         time: data.timeElapsed,
         score: data.score,
-        isCurrentUser: odataUri === firebaseUserId
+        fallbackNickname: data.nickname || 'אנונימי' // Use as fallback
       });
     });
+    
+    // Fetch nicknames from users collection (centralized)
+    const nicknameMap = await fetchNicknames(Array.from(userIds));
+    
+    // Build final leaderboard with centralized nicknames
+    const leaderboard = entries.map((entry, index) => ({
+      rank: index + 1,
+      odataUri: entry.odataUri,
+      nickname: nicknameMap[entry.odataUri] || entry.fallbackNickname,
+      mistakes: entry.mistakes,
+      time: entry.time,
+      score: entry.score,
+      isCurrentUser: entry.odataUri === firebaseUserId
+    }));
     
     return leaderboard;
   } catch (error) {
     console.log('Could not load leaderboard:', error);
     return [];
   }
+}
+
+// Fetch nicknames from users collection
+async function fetchNicknames(userIds) {
+  const nicknameMap = {};
+  
+  if (!db || userIds.length === 0) return nicknameMap;
+  
+  try {
+    // Fetch each user's nickname (Firebase doesn't support "in" query for doc IDs easily)
+    const promises = userIds.map(async (odataUri) => {
+      try {
+        const userRef = doc(db, 'users', odataUri);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          nicknameMap[odataUri] = userSnap.data().nickname;
+        }
+      } catch (e) {
+        // Ignore individual failures
+      }
+    });
+    
+    await Promise.all(promises);
+  } catch (error) {
+    console.log('Could not fetch nicknames:', error);
+  }
+  
+  return nicknameMap;
 }
 
 // Load global statistics from Firebase
