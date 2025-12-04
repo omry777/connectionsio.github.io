@@ -1146,6 +1146,56 @@ h1 {
   opacity: 0.7;
 }
 
+/* Nickname Display in Header */
+.nickname-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 15px;
+  padding: 10px 20px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.nickname-display:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+.nickname-display .nickname-icon {
+  font-size: 16px;
+}
+
+.nickname-display .nickname-edit-icon {
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.nickname-display:hover .nickname-edit-icon {
+  opacity: 0.7;
+}
+
+.nickname-display.no-nickname {
+  border-style: dashed;
+  animation: pulse-border 2s ease-in-out infinite;
+}
+
+.nickname-display.no-nickname #currentNickname {
+  color: var(--accent);
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--glass-border); }
+  50% { border-color: var(--primary); }
+}
+
 /* Easter Egg - Hidden at bottom of page */
 .easter-egg {
   position: relative;

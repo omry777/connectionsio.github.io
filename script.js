@@ -26,6 +26,7 @@ function getNickname() {
 
 function setNickname(nickname) {
   localStorage.setItem('connections_nickname', nickname);
+  updateNicknameDisplay();
 }
 
 function generateRandomNickname() {
@@ -35,6 +36,95 @@ function generateRandomNickname() {
   const noun = nouns[Math.floor(Math.random() * nouns.length)];
   const num = Math.floor(Math.random() * 99) + 1;
   return `${adj}${noun}${num}`;
+}
+
+// Update nickname display on screen
+function updateNicknameDisplay() {
+  const nicknameEl = document.getElementById('currentNickname');
+  if (nicknameEl) {
+    const nickname = getNickname();
+    nicknameEl.textContent = nickname || 'הגדר כינוי';
+    
+    // Add different style if no nickname set
+    const displayEl = document.getElementById('nicknameDisplay');
+    if (displayEl) {
+      if (nickname) {
+        displayEl.classList.remove('no-nickname');
+      } else {
+        displayEl.classList.add('no-nickname');
+      }
+    }
+  }
+}
+
+// Edit nickname - show modal
+window.editNickname = function() {
+  const currentNickname = getNickname() || '';
+  
+  const modal = document.createElement('div');
+  modal.id = 'editNicknameModal';
+  modal.className = 'nickname-modal';
+  
+  modal.innerHTML = `
+    <div class="nickname-content hebrew-text">
+      <h2>✏️ שנה כינוי</h2>
+      <p>הכינוי שלך יופיע בטבלת המובילים</p>
+      <input type="text" id="editNicknameInput" class="nickname-input" value="${currentNickname}" placeholder="הכנס כינוי..." maxlength="20" dir="rtl">
+      <div class="nickname-buttons">
+        <button class="btn btn-primary" id="saveEditNicknameBtn">💾 שמור</button>
+        <button class="btn btn-secondary" id="randomEditNicknameBtn">🎲 כינוי אקראי</button>
+        <button class="btn btn-ghost" id="cancelEditNicknameBtn">ביטול</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  const input = document.getElementById('editNicknameInput');
+  const saveBtn = document.getElementById('saveEditNicknameBtn');
+  const randomBtn = document.getElementById('randomEditNicknameBtn');
+  const cancelBtn = document.getElementById('cancelEditNicknameBtn');
+  
+  // Focus and select input
+  setTimeout(() => {
+    input.focus();
+    input.select();
+  }, 100);
+  
+  // Save nickname
+  saveBtn.onclick = () => {
+    const nickname = input.value.trim();
+    if (nickname) {
+      setNickname(nickname);
+    }
+    modal.remove();
+  };
+  
+  // Generate random nickname
+  randomBtn.onclick = () => {
+    input.value = generateRandomNickname();
+  };
+  
+  // Cancel
+  cancelBtn.onclick = () => {
+    modal.remove();
+  };
+  
+  // Click outside to close
+  modal.onclick = (e) => {
+    if (e.target === modal) {
+      modal.remove();
+    }
+  };
+  
+  // Enter key to save
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      saveBtn.click();
+    } else if (e.key === 'Escape') {
+      modal.remove();
+    }
+  };
 }
 
 let puzzle = {};
@@ -178,6 +268,7 @@ async function loadTodaysPuzzle() {
 
 // Initialize game
 loadTodaysPuzzle();
+updateNicknameDisplay();
 
 // Load puzzle words into grid
 function loadPuzzle() {
