@@ -1249,3 +1249,306 @@ h1 {
   background: rgba(255, 255, 255, 0.2);
 }
 
+/* ============================================
+   PUZZLE ARCHIVE FEATURE
+   ============================================ */
+
+/* Archive Button in Header */
+.btn-archive {
+  background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%) !important;
+  border: none !important;
+  color: white !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-archive::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.btn-archive:hover::before {
+  left: 100%;
+}
+
+.btn-archive:hover {
+  box-shadow: 0 10px 30px rgba(168, 85, 247, 0.5) !important;
+  transform: translateY(-2px);
+}
+
+/* Archive Banner (shown when playing archived puzzle) */
+.archive-banner {
+  background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+  border-radius: 16px;
+  padding: 15px 25px;
+  margin-bottom: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  flex-wrap: wrap;
+  box-shadow: 0 10px 40px rgba(168, 85, 247, 0.3);
+  animation: slideDown 0.4s ease;
+}
+
+@keyframes slideDown {
+  from { 
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.archive-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.archive-date-display {
+  font-size: 16px;
+  color: white;
+}
+
+.archive-date-display strong {
+  color: #fef3c7;
+}
+
+.archive-practice-label {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 5px 15px;
+  border-radius: 20px;
+  font-size: 13px;
+  color: white;
+  border: 1px dashed rgba(255, 255, 255, 0.4);
+}
+
+.btn-return-daily {
+  background: white !important;
+  color: #7c3aed !important;
+  border: none !important;
+  font-weight: 600 !important;
+  padding: 10px 20px !important;
+  border-radius: 25px !important;
+  font-size: 14px !important;
+  transition: all 0.3s ease !important;
+  font-family: 'Heebo', sans-serif !important;
+  cursor: pointer !important;
+}
+
+.btn-return-daily:hover {
+  transform: scale(1.05);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+}
+
+/* Archive Modal */
+.archive-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(15, 15, 26, 0.95);
+  backdrop-filter: blur(15px);
+  z-index: 99998;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: fadeIn 0.3s ease;
+  padding: 20px;
+}
+
+.archive-modal-content {
+  background: linear-gradient(180deg, #1e1e2e 0%, #15151f 100%);
+  border: 1px solid var(--glass-border);
+  padding: 35px;
+  border-radius: 25px;
+  max-width: 550px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.archive-modal-content h2 {
+  text-align: center;
+  font-size: 28px;
+  margin-bottom: 10px;
+  color: var(--text-primary);
+}
+
+.archive-subtitle {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin-bottom: 25px;
+}
+
+/* Puzzle List */
+.archive-puzzle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding-left: 5px;
+}
+
+.archive-puzzle-item {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 18px 22px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+}
+
+.archive-puzzle-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, var(--primary) 0%, var(--accent) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.archive-puzzle-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateX(-5px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.archive-puzzle-item:hover::before {
+  opacity: 1;
+}
+
+.archive-puzzle-item.is-today {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.15) 100%);
+  border-color: var(--primary);
+}
+
+.archive-puzzle-item.is-today .puzzle-today-badge {
+  display: inline-block;
+}
+
+.puzzle-date-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.puzzle-date {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.puzzle-day-name {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.puzzle-today-badge {
+  display: none;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  color: white;
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.puzzle-play-arrow {
+  font-size: 24px;
+  color: var(--primary);
+  opacity: 0;
+  transform: translateX(-10px);
+  transition: all 0.3s ease;
+}
+
+.archive-puzzle-item:hover .puzzle-play-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Empty Archive State */
+.archive-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+}
+
+.archive-empty-icon {
+  font-size: 60px;
+  margin-bottom: 15px;
+  opacity: 0.5;
+}
+
+/* Archive Modal Responsive */
+@media (max-width: 768px) {
+  .archive-modal-content {
+    padding: 25px 20px;
+    margin: 10px;
+  }
+  
+  .archive-banner {
+    flex-direction: column;
+    text-align: center;
+    gap: 12px;
+    padding: 15px;
+  }
+  
+  .archive-banner-content {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .archive-puzzle-item {
+    padding: 15px 18px;
+  }
+  
+  .puzzle-date {
+    font-size: 16px;
+  }
+}
+
+/* Archive Practice Mode indicator on grid */
+.practice-mode .grid-item {
+  position: relative;
+}
+
+.practice-mode .grid-item::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-top: 8px solid rgba(168, 85, 247, 0.6);
+  border-left: 8px solid transparent;
+  border-radius: 0 12px 0 0;
+}
+

@@ -155,6 +155,8 @@ let currentGroups = [];
 let mistakesCount = 0;
 let gameStartTime = null;
 let gameActive = false;
+let isPracticeMode = false; // Track if playing archived puzzle
+let allPuzzles = []; // Store all puzzles for archive feature
 const dots = document.querySelectorAll('.dot');
 const totalDots = dots.length;
 
@@ -173,6 +175,14 @@ function markMistake() {
 function endGame(won = false) {
   gameActive = false;
   const timeElapsed = Math.floor((Date.now() - gameStartTime) / 1000);
+  
+  // If in practice mode (archive puzzle), don't save anything
+  if (isPracticeMode) {
+    console.log('Practice mode - not counting in statistics');
+    const stats = analytics.getStats();
+    finishEndGame(won, stats, timeElapsed, true); // treat as "replay"
+    return;
+  }
   
   // Check if user already played today - only count FIRST attempt
   const alreadyPlayedToday = analytics.hasPlayedToday();
@@ -237,10 +247,19 @@ function revealSolutions() {
 async function loadTodaysPuzzle() {
   const today = new Date().toISOString().split('T')[0];
   
+  // Reset practice mode
+  isPracticeMode = false;
+  hideArchiveBanner();
+  document.getElementById('game-container')?.classList.remove('practice-mode');
+  
   try {
     // First try to load from JSON
     const response = await fetch('puzzles.json');
     const data = await response.json();
+    
+    // Store all puzzles for archive feature
+    allPuzzles = data.puzzles || [];
+    
     puzzle = data.puzzles.find(p => p.date === today);
     
     // If no puzzle for today, generate one
@@ -496,16 +515,40 @@ function showWrongNotification() {
 function showFailureModal(isReplay = false) {
   const modal = document.getElementById('failureModal') || createFailureModal();
   
-  const replayBanner = isReplay ? `
-    <div class="replay-notice hebrew-text">
-      🔄 משחק חוזר - לא נספר בסטטיסטיקה
+  let replayBanner = '';
+  if (isPracticeMode) {
+    replayBanner = `
+      <div class="replay-notice hebrew-text" style="background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.3);">
+        📅 מצב תרגול - חידה מהארכיון
+      </div>
+    `;
+  } else if (isReplay) {
+    replayBanner = `
+      <div class="replay-notice hebrew-text">
+        🔄 משחק חוזר - לא נספר בסטטיסטיקה
+      </div>
+    `;
+  }
+  
+  const practiceActions = isPracticeMode ? `
+    <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2);">
+      <button class="btn btn-light" onclick="document.getElementById('failureModal').style.display='none'; returnToDailyPuzzle();">
+        ⬅️ חזרה לחידה היומית
+      </button>
+      <button class="btn btn-warning" onclick="document.getElementById('failureModal').style.display='none'; showArchiveModal();" style="margin-right: 10px;">
+        📅 עוד חידות מהארכיון
+      </button>
     </div>
   ` : '';
+  
+  const encouragementText = isPracticeMode 
+    ? 'אפשר לנסות חידה נוספת מהארכיון!' 
+    : 'אל דאגה, מחר יש חידה חדשה!';
   
   modal.querySelector('.failure-content').innerHTML = `
     <h2 class="hebrew-text">😔 הפעם לא הצלחנו</h2>
     ${replayBanner}
-    <p class="hebrew-text">אל דאגה, מחר יש חידה חדשה!</p>
+    <p class="hebrew-text">${encouragementText}</p>
     <p class="hebrew-text" style="font-size: 14px; opacity: 0.8;">הקבוצות שנותרו יוצגו למטה</p>
     <div style="margin-top: 25px;">
       <button class="btn btn-light" onclick="document.getElementById('failureModal').style.display='none'; showStatsModal();">
@@ -515,6 +558,7 @@ function showFailureModal(isReplay = false) {
         👀 צפה בפתרונות
       </button>
     </div>
+    ${practiceActions}
   `;
   modal.style.display = 'flex';
 }
@@ -617,9 +661,29 @@ function showVictoryModal(stats, timeElapsed, isReplay = false) {
   const minutes = Math.floor(timeElapsed / 60);
   const seconds = timeElapsed % 60;
   
-  const replayBanner = isReplay ? `
-    <div class="replay-notice hebrew-text">
-      🔄 משחק חוזר - לא נספר בסטטיסטיקה
+  let replayBanner = '';
+  if (isPracticeMode) {
+    replayBanner = `
+      <div class="replay-notice hebrew-text" style="background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(124, 58, 237, 0.2)); border-color: rgba(168, 85, 247, 0.5);">
+        📅 מצב תרגול - חידה מהארכיון
+      </div>
+    `;
+  } else if (isReplay) {
+    replayBanner = `
+      <div class="replay-notice hebrew-text">
+        🔄 משחק חוזר - לא נספר בסטטיסטיקה
+      </div>
+    `;
+  }
+  
+  const practiceButtons = isPracticeMode ? `
+    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2);">
+      <button class="btn btn-secondary" onclick="document.getElementById('victoryModal').style.display='none'; returnToDailyPuzzle();">
+        ⬅️ חזרה לחידה היומית
+      </button>
+      <button class="btn btn-secondary" onclick="document.getElementById('victoryModal').style.display='none'; showArchiveModal();" style="margin-right: 10px;">
+        📅 עוד חידות מהארכיון
+      </button>
     </div>
   ` : '';
   
@@ -641,9 +705,10 @@ function showVictoryModal(stats, timeElapsed, isReplay = false) {
       </div>
     </div>
     <div class="share-section hebrew-text">
-      <button class="btn btn-primary" onclick="shareResults()">שתף תוצאות</button>
+      ${!isPracticeMode ? '<button class="btn btn-primary" onclick="shareResults()">שתף תוצאות</button>' : ''}
       <button class="btn btn-secondary" onclick="showStatsModal()">סטטיסטיקות</button>
     </div>
+    ${practiceButtons}
   `;
   modal.style.display = 'flex';
 }
@@ -1219,6 +1284,200 @@ try {
   console.log('Firebase initialization failed - using local features only:', error);
 }
 // const database = firebase.database();
+
+// ============================================
+// PUZZLE ARCHIVE FEATURE
+// ============================================
+
+// Show archive modal
+window.showArchiveModal = function() {
+  const modal = document.getElementById('archiveModal');
+  const listContainer = document.getElementById('archivePuzzleList');
+  
+  if (!modal || !listContainer) return;
+  
+  // Populate puzzle list
+  populateArchiveList(listContainer);
+  
+  modal.style.display = 'flex';
+  
+  // Close on background click
+  modal.onclick = (e) => {
+    if (e.target === modal) {
+      modal.style.display = 'none';
+    }
+  };
+}
+
+// Populate archive list with all available puzzles
+function populateArchiveList(container) {
+  const today = new Date().toISOString().split('T')[0];
+  
+  // Filter out future puzzles and sort by date (newest first)
+  const sortedPuzzles = [...allPuzzles]
+    .filter(p => p.date <= today) // Only show today and past puzzles
+    .sort((a, b) => {
+      return new Date(b.date) - new Date(a.date);
+    });
+  
+  if (sortedPuzzles.length === 0) {
+    container.innerHTML = `
+      <div class="archive-empty">
+        <div class="archive-empty-icon">📭</div>
+        <p>אין חידות בארכיון עדיין</p>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = sortedPuzzles.map(p => {
+    const isToday = p.date === today;
+    const dateObj = new Date(p.date);
+    const dayNames = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    const dayName = dayNames[dateObj.getDay()];
+    
+    // Format date in Hebrew style
+    const formattedDate = formatHebrewDate(p.date);
+    
+    return `
+      <div class="archive-puzzle-item ${isToday ? 'is-today' : ''}" onclick="loadArchivedPuzzle('${p.date}')">
+        <div class="puzzle-date-info">
+          <div class="puzzle-date">
+            📅 ${formattedDate}
+            ${isToday ? '<span class="puzzle-today-badge">היום</span>' : ''}
+          </div>
+          <div class="puzzle-day-name">יום ${dayName}</div>
+        </div>
+        <div class="puzzle-play-arrow">◀</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Format date in Hebrew-friendly format
+function formatHebrewDate(dateString) {
+  const date = new Date(dateString);
+  const day = date.getDate();
+  const months = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 
+                  'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+  const month = months[date.getMonth()];
+  const year = date.getFullYear();
+  return `${day} ב${month} ${year}`;
+}
+
+// Load archived puzzle
+window.loadArchivedPuzzle = function(dateString) {
+  const today = new Date().toISOString().split('T')[0];
+  
+  // If selecting today's puzzle, just reload normally
+  if (dateString === today) {
+    document.getElementById('archiveModal').style.display = 'none';
+    returnToDailyPuzzle();
+    return;
+  }
+  
+  // Find the puzzle for the selected date
+  const selectedPuzzle = allPuzzles.find(p => p.date === dateString);
+  
+  if (!selectedPuzzle) {
+    alert('החידה לא נמצאה');
+    return;
+  }
+  
+  // Close modal
+  document.getElementById('archiveModal').style.display = 'none';
+  
+  // Remove any "already played" message
+  const alreadyPlayedMsg = document.querySelector('.already-played-message');
+  if (alreadyPlayedMsg) {
+    alreadyPlayedMsg.remove();
+  }
+  
+  // Set practice mode
+  isPracticeMode = true;
+  
+  // Reset game state
+  resetGameState();
+  
+  // Load the selected puzzle
+  puzzle = JSON.parse(JSON.stringify(selectedPuzzle)); // Deep copy
+  puzzle.groups.forEach((group, index) => {
+    group.guessed = false;
+    group.index = index;
+  });
+  
+  // Show archive banner
+  showArchiveBanner(dateString);
+  
+  // Add practice mode class
+  document.getElementById('game-container')?.classList.add('practice-mode');
+  
+  // Start game
+  gameStartTime = Date.now();
+  gameActive = true;
+  
+  shuffleGrid();
+  
+  console.log(`Loaded archived puzzle from ${dateString} in practice mode`);
+}
+
+// Return to daily puzzle
+window.returnToDailyPuzzle = function() {
+  // Remove any "already played" message that might have been shown
+  const alreadyPlayedMsg = document.querySelector('.already-played-message');
+  if (alreadyPlayedMsg) {
+    alreadyPlayedMsg.remove();
+  }
+  
+  // Reset game state
+  resetGameState();
+  
+  // Reload today's puzzle
+  loadTodaysPuzzle();
+}
+
+// Reset game state for new puzzle
+function resetGameState() {
+  selectedItems = [];
+  mistakesCount = 0;
+  gameActive = false;
+  
+  // Reset mistake dots
+  document.querySelectorAll('.dot').forEach(dot => {
+    dot.classList.remove('red');
+  });
+  
+  // Clear revealed groups
+  const revealedGroups = document.getElementById('revealed-groups');
+  if (revealedGroups) {
+    revealedGroups.innerHTML = '';
+  }
+  
+  // Clear grid
+  const grid = document.getElementById('grid');
+  if (grid) {
+    grid.innerHTML = '';
+  }
+}
+
+// Show archive banner
+function showArchiveBanner(dateString) {
+  const banner = document.getElementById('archiveBanner');
+  const dateText = document.getElementById('archiveDateText');
+  
+  if (banner && dateText) {
+    dateText.textContent = formatHebrewDate(dateString);
+    banner.style.display = 'flex';
+  }
+}
+
+// Hide archive banner
+function hideArchiveBanner() {
+  const banner = document.getElementById('archiveBanner');
+  if (banner) {
+    banner.style.display = 'none';
+  }
+}
 
   // Form submission handler
 document.getElementById('suggestForm').addEventListener('submit', async (e) => {

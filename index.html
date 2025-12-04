@@ -25,6 +25,7 @@
             <div class="header-buttons">
                 <button id="statsButton" class="btn btn-info" onclick="showStatsModal()">📊 סטטיסטיקות</button>
                 <button class="btn btn-secondary" onclick="showHowToPlay()">❓ איך משחקים</button>
+                <button class="btn btn-archive" onclick="showArchiveModal()">📅 ארכיון חידות</button>
             </div>
             <!-- Nickname Display -->
             <div id="nicknameDisplay" class="nickname-display hebrew-text" onclick="editNickname()">
@@ -32,6 +33,17 @@
               <span id="currentNickname">טוען...</span>
               <span class="nickname-edit-icon">✏️</span>
             </div>
+        </div>
+
+        <!-- Archive Mode Banner (hidden by default) -->
+        <div id="archiveBanner" class="archive-banner hebrew-text" style="display: none;">
+          <div class="archive-banner-content">
+            <span class="archive-date-display">📅 חידה מתאריך: <strong id="archiveDateText"></strong></span>
+            <span class="archive-practice-label">🎯 מצב תרגול</span>
+          </div>
+          <button class="btn btn-return-daily" onclick="returnToDailyPuzzle()">
+            ⬅️ חזרה לחידה היומית
+          </button>
         </div>
 
         <!-- Game Container -->
@@ -117,6 +129,18 @@
     </div>
     </div><!-- End of container -->
     
+    <!-- Puzzle Archive Modal -->
+    <div id="archiveModal" class="archive-modal" style="display: none;">
+      <div class="archive-modal-content hebrew-text">
+        <span class="close-modal" onclick="document.getElementById('archiveModal').style.display='none'">&times;</span>
+        <h2>📅 ארכיון חידות</h2>
+        <p class="archive-subtitle">בחרו חידה מהעבר לתרגול - ללא שמירת ניקוד</p>
+        <div id="archivePuzzleList" class="archive-puzzle-list">
+          <!-- Puzzle list will be populated by JavaScript -->
+        </div>
+      </div>
+    </div>
+
     <!-- How to Play Modal -->
     <div id="howToPlayModal" class="stats-modal" style="display: none;">
       <div class="stats-modal-content">
