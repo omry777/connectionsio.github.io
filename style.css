@@ -1023,17 +1023,19 @@ h1 {
   }
 }
 
-/* Easter Egg - Hidden at bottom of page */
+/* Easter Egg */
 .easter-egg {
-  position: relative;
-  margin-top: 100px;
-  text-align: center;
+  position: fixed;
+  bottom: 15px;
+  right: 15px;
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.08);
   cursor: default;
   user-select: none;
   transition: all 0.3s ease;
-  padding: 20px 10px 40px;
+  z-index: 10;
+  padding: 5px 10px;
+  border-radius: 5px;
 }
 
 .easter-egg:hover {

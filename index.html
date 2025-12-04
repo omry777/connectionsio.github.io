@@ -146,19 +146,23 @@
       }
     </script>
     
+    <!-- Easter Egg -->
+    <div id="easterEgg" class="easter-egg hebrew-text" onclick="triggerEasterEgg(event)">
+      ״מטולה כאן מטולה בלגן״
+    </div>
+    
     <script>
       // Easter Egg - Confetti & Pop!
       function triggerEasterEgg(event) {
         const egg = event.target;
-        
-        // Use click coordinates directly (works with scroll)
-        const x = event.clientX;
-        const y = event.clientY;
+        const rect = egg.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
         
         // Play pop sound
         playPopSound();
         
-        // Create confetti burst at click location
+        // Create confetti burst
         createConfetti(x, y);
         
         // Animate the text
