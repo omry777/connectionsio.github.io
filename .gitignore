@@ -3,8 +3,8 @@
 .env.local
 .env.*.local
 
-# Firebase config with secrets - NEVER commit!
-firebase_config.js
+# Note: firebase_config.js IS safe to commit for client-side apps
+# Security is handled by Firebase Security Rules + Anonymous Auth
 
 # Node modules
 node_modules/
