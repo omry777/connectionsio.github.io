@@ -681,10 +681,28 @@ function showAlreadyPlayedMessage(todayStats) {
   document.querySelector('.container').prepend(message);
 }
 
+// Wait for Firebase Auth to be ready (with timeout)
+async function waitForAuth(maxWaitMs = 5000) {
+  if (firebaseUserId) return true;
+  
+  const startTime = Date.now();
+  while (!firebaseUserId && (Date.now() - startTime) < maxWaitMs) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return !!firebaseUserId;
+}
+
 // Update global statistics in Firebase
 async function updateGlobalStats(won, mistakes, timeElapsed = 0) {
   if (!db) {
     console.log('Firebase not configured - skipping global stats update');
+    return;
+  }
+  
+  // Wait for auth (rules require request.auth != null)
+  const authReady = await waitForAuth(5000);
+  if (!authReady) {
+    console.log('Auth timeout - could not update global stats');
     return;
   }
   
@@ -712,8 +730,10 @@ async function saveUserGameResult(won, mistakes, timeElapsed) {
     return;
   }
   
-  if (!firebaseUserId) {
-    console.log('Not authenticated - skipping user stats save');
+  // Wait for auth to complete (up to 5 seconds)
+  const authReady = await waitForAuth(5000);
+  if (!authReady) {
+    console.log('Auth timeout - could not save user stats');
     return;
   }
   
@@ -732,7 +752,7 @@ async function saveUserGameResult(won, mistakes, timeElapsed) {
       // Calculate score: lower is better (mistakes * 100 + time)
       score: (mistakes * 100) + timeElapsed
     });
-    console.log('User game result saved successfully');
+    console.log('User game result saved successfully to:', userGameRef.path);
   } catch (error) {
     console.log('Could not save user game result:', error);
   }
