@@ -519,7 +519,8 @@ async function updateStatsModalContent() {
     </div>
   `;
   
-  // Load leaderboard asynchronously
+  // Load data asynchronously after modal content is created
+  loadGlobalStatsContent();
   loadLeaderboardContent();
 }
 
@@ -568,6 +569,61 @@ async function loadLeaderboardContent() {
       </tbody>
     </table>
   `;
+}
+
+// Load global stats content for the modal
+async function loadGlobalStatsContent() {
+  const globalStatsContent = document.getElementById('globalStatsContent');
+  if (!globalStatsContent) return;
+  
+  if (!db) {
+    globalStatsContent.innerHTML = '<p style="text-align: center; color: #666;">Firebase לא מוגדר</p>';
+    return;
+  }
+  
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const statsRef = doc(db, 'dailyStats', today);
+    const statsSnap = await getDoc(statsRef);
+    
+    if (statsSnap.exists()) {
+      const data = statsSnap.data();
+      const totalPlays = data.totalPlays || 0;
+      const totalWins = data.totalWins || 0;
+      const totalMistakes = data.totalMistakes || 0;
+      const totalTime = data.totalTime || 0;
+      const avgTime = totalWins > 0 ? Math.floor(totalTime / totalWins) : 0;
+      const avgMins = Math.floor(avgTime / 60);
+      const avgSecs = avgTime % 60;
+      
+      globalStatsContent.innerHTML = `
+        <div class="stats-chart">
+          <div class="chart-bar-container">
+            <div class="chart-label">שיחקו:</div>
+            <div style="font-weight: bold; font-size: 24px; color: #667eea;">${totalPlays}</div>
+          </div>
+          <div class="chart-bar-container">
+            <div class="chart-label">הצליחו:</div>
+            <div style="font-weight: bold; font-size: 24px; color: #4caf50;">${totalWins}</div>
+            <div style="color: #666; margin-right: 10px;">(${totalPlays > 0 ? Math.round((totalWins / totalPlays) * 100) : 0}%)</div>
+          </div>
+          <div class="chart-bar-container">
+            <div class="chart-label">ממוצע טעויות:</div>
+            <div style="font-weight: bold; font-size: 20px; color: #f44336;">${totalPlays > 0 ? (totalMistakes / totalPlays).toFixed(1) : 0}</div>
+          </div>
+          <div class="chart-bar-container">
+            <div class="chart-label">זמן ממוצע:</div>
+            <div style="font-weight: bold; font-size: 20px; color: #ff9800;">${avgMins}:${avgSecs.toString().padStart(2, '0')}</div>
+          </div>
+        </div>
+      `;
+    } else {
+      globalStatsContent.innerHTML = '<p style="text-align: center; color: #666;">אין עדיין נתונים להיום</p>';
+    }
+  } catch (error) {
+    console.log('Could not load global stats for modal:', error);
+    globalStatsContent.innerHTML = '<p style="text-align: center; color: #666;">שגיאה בטעינת הנתונים</p>';
+  }
 }
 
 // Update stats display in main UI
