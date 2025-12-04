@@ -40,20 +40,32 @@ function endGame(won = false) {
   gameActive = false;
   const timeElapsed = Math.floor((Date.now() - gameStartTime) / 1000);
   
-  // Record game result
-  const stats = analytics.recordGameEnd(won, mistakesCount, timeElapsed);
+  // Check if user already played today - only count FIRST attempt
+  const alreadyPlayedToday = analytics.hasPlayedToday();
   
-  // Update global statistics in Firebase (both global and user-specific)
-  updateGlobalStats(won, mistakesCount, timeElapsed);
-  saveUserGameResult(won, mistakesCount, timeElapsed);
+  // Record game result locally (only first attempt)
+  let stats;
+  if (!alreadyPlayedToday) {
+    stats = analytics.recordGameEnd(won, mistakesCount, timeElapsed);
+    
+    // Update global statistics in Firebase (only first attempt)
+    updateGlobalStats(won, mistakesCount, timeElapsed);
+    saveUserGameResult(won, mistakesCount, timeElapsed);
+  } else {
+    // For replay, just get existing stats without recording
+    stats = analytics.getStats();
+    console.log('Replay detected - not counting in statistics');
+  }
   
   if (won) {
-    showVictoryModal(stats, timeElapsed);
-    updateLiveCounter();
+    showVictoryModal(stats, timeElapsed, alreadyPlayedToday);
+    if (!alreadyPlayedToday) {
+      updateLiveCounter();
+    }
   } else {
     // Show the failure modal instead of alert
     setTimeout(() => {
-      showFailureModal();
+      showFailureModal(alreadyPlayedToday);
       revealSolutions();
     }, 500);
   }
@@ -311,10 +323,18 @@ function showWrongNotification() {
 }
 
 // Show failure modal (instead of alert)
-function showFailureModal() {
+function showFailureModal(isReplay = false) {
   const modal = document.getElementById('failureModal') || createFailureModal();
+  
+  const replayBanner = isReplay ? `
+    <div class="replay-notice hebrew-text">
+      🔄 משחק חוזר - לא נספר בסטטיסטיקה
+    </div>
+  ` : '';
+  
   modal.querySelector('.failure-content').innerHTML = `
     <h2 class="hebrew-text">😔 הפעם לא הצלחנו</h2>
+    ${replayBanner}
     <p class="hebrew-text">אל דאגה, מחר יש חידה חדשה!</p>
     <p class="hebrew-text" style="font-size: 14px; opacity: 0.8;">הקבוצות שנותרו יוצגו למטה</p>
     <div style="margin-top: 25px;">
@@ -362,13 +382,20 @@ function showNoPuzzleMessage() {
 }
 
 // Show victory modal
-function showVictoryModal(stats, timeElapsed) {
+function showVictoryModal(stats, timeElapsed, isReplay = false) {
   const modal = document.getElementById('victoryModal') || createVictoryModal();
   const minutes = Math.floor(timeElapsed / 60);
   const seconds = timeElapsed % 60;
   
+  const replayBanner = isReplay ? `
+    <div class="replay-notice hebrew-text">
+      🔄 משחק חוזר - לא נספר בסטטיסטיקה
+    </div>
+  ` : '';
+  
   modal.querySelector('.victory-content').innerHTML = `
     <h2 class="hebrew-text">🎉 כל הכבוד! 🎉</h2>
+    ${replayBanner}
     <div class="victory-stats hebrew-text">
       <div class="stat-item">
         <div class="stat-value">${mistakesCount}</div>

@@ -599,6 +599,17 @@
   transform: scale(1.05);
 }
 
+/* Replay Notice Banner */
+.replay-notice {
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px dashed rgba(255, 255, 255, 0.5);
+  border-radius: 10px;
+  padding: 10px 20px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
 /* Wrong Answer Notification */
 .wrong-notification {
   position: fixed;
