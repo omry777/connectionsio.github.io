@@ -3,6 +3,11 @@
 .env.local
 .env.*.local
 
+# Firebase Service Account - NEVER commit this!
+firebase-service-account.json
+*-service-account.json
+*.json.key
+
 # Note: firebase_config.js IS safe to commit for client-side apps
 # Security is handled by Firebase Security Rules + Anonymous Auth
 

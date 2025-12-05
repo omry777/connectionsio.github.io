@@ -7,9 +7,13 @@
  *   npm run generate-gemini-week         # Generate next 7 days
  *   npm run preview-gemini               # Preview without saving
  *   node generate-puzzle-gemini.js --date 2025-12-01  # Specific date
+ * 
+ * Puzzles are saved directly to Firebase Firestore (not to puzzles.json)
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -26,8 +30,42 @@ const __dirname = path.dirname(__filename);
 const CONFIG = {
   apiKey: process.env.GEMINI_API_KEY,
   model: process.env.GEMINI_MODEL || 'gemini-2.5-pro',
-  puzzlesFile: path.join(__dirname, 'puzzles.json')
+  puzzlesFile: path.join(__dirname, 'puzzles.json'), // Legacy, kept for validation/stats
+  firebaseProjectId: process.env.FIREBASE_PROJECT_ID || 'connectionsio',
+  firebaseServiceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH
 };
+
+// Initialize Firebase Admin SDK
+let db = null;
+function initFirebase() {
+  if (db) return db;
+  
+  try {
+    let firebaseConfig = { projectId: CONFIG.firebaseProjectId };
+    
+    // Use service account if provided, otherwise use Application Default Credentials
+    if (CONFIG.firebaseServiceAccountPath && fs.existsSync(CONFIG.firebaseServiceAccountPath)) {
+      const serviceAccount = JSON.parse(fs.readFileSync(CONFIG.firebaseServiceAccountPath, 'utf8'));
+      firebaseConfig.credential = cert(serviceAccount);
+      console.log('🔐 Using service account credentials');
+    } else {
+      console.log('🔐 Using Application Default Credentials (ADC)');
+      console.log('   If this fails, set FIREBASE_SERVICE_ACCOUNT_PATH in .env');
+    }
+    
+    initializeApp(firebaseConfig);
+    db = getFirestore();
+    console.log('✅ Firebase initialized successfully');
+    return db;
+  } catch (error) {
+    console.error('❌ Firebase initialization failed:', error.message);
+    console.error('\n💡 To fix this:');
+    console.error('   1. Download service account key from Firebase Console');
+    console.error('   2. Save it as firebase-service-account.json');
+    console.error('   3. Add FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json to .env');
+    return null;
+  }
+}
 
 // Validate API key
 if (!CONFIG.apiKey || CONFIG.apiKey === 'your-gemini-api-key-here') {
@@ -48,10 +86,67 @@ const model = genAI.getGenerativeModel({ model: CONFIG.model });
 const COLORS = ['#f44336', '#4caf50', '#9c27b0', '#2196f3'];
 
 /**
+ * Get list of recently used words from existing puzzles
+ */
+function getRecentlyUsedWords(existingPuzzles, daysToLookBack = 30) {
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - daysToLookBack);
+  const cutoffStr = cutoffDate.toISOString().split('T')[0];
+  
+  const usedWords = new Set();
+  const usedExplanations = new Set();
+  
+  existingPuzzles.forEach(puzzle => {
+    if (puzzle.date >= cutoffStr) {
+      puzzle.words?.forEach(word => usedWords.add(word));
+      puzzle.groups?.forEach(group => {
+        if (group.explanation) {
+          usedExplanations.add(group.explanation.toLowerCase());
+        }
+      });
+    }
+  });
+  
+  return {
+    words: Array.from(usedWords),
+    explanations: Array.from(usedExplanations)
+  };
+}
+
+/**
  * Generate a puzzle using Gemini AI
  */
-async function generatePuzzleWithGemini(date) {
+async function generatePuzzleWithGemini(date, existingPuzzles = []) {
   console.log(`\n🤖 Generating puzzle for ${date} using Gemini ${CONFIG.model}...`);
+  
+  // Get recently used words to avoid
+  const recentlyUsed = getRecentlyUsedWords(existingPuzzles, 30);
+  
+  let avoidWordsSection = '';
+  if (recentlyUsed.words.length > 0) {
+    // Show a sample of words to avoid (Gemini has context limits)
+    const wordsToShow = recentlyUsed.words.slice(0, 100);
+    avoidWordsSection = `
+
+⚠️ חשוב מאוד - אל תשתמש במילים הבאות (כבר הופיעו בחידות קודמות):
+${wordsToShow.join(', ')}
+${recentlyUsed.words.length > 100 ? `\n(ועוד ${recentlyUsed.words.length - 100} מילים נוספות)` : ''}
+
+בחר מילים חדשות ומקוריות שלא הופיעו ברשימה למעלה!`;
+    
+    console.log(`   📋 Avoiding ${recentlyUsed.words.length} recently used words`);
+  }
+  
+  let avoidExplanationsSection = '';
+  if (recentlyUsed.explanations.length > 0) {
+    const explanationsToShow = recentlyUsed.explanations.slice(0, 20);
+    avoidExplanationsSection = `
+
+⚠️ נושאים/קשרים שכבר היו - בחר נושאים שונים:
+${explanationsToShow.join('\n')}`;
+    
+    console.log(`   📋 Avoiding ${recentlyUsed.explanations.length} recently used themes`);
+  }
   
   const prompt = `
 אתה מומחה במשחק Connections בעברית ומומחה בתרבות הישראלית.
@@ -65,6 +160,8 @@ async function generatePuzzleWithGemini(date) {
 - ודא שכל מילה מופיעה רק פעם אחת
 - הסברים צריכים להיות קצרים וברורים (עד 10 מילים)
 - השתמש במילים מעניינות ולא טריוויאליות
+${avoidWordsSection}
+${avoidExplanationsSection}
 
 דוגמאות לקשרים מעניינים:
 - "מילים שמסתיימות ב___"
@@ -73,6 +170,9 @@ async function generatePuzzleWithGemini(date) {
 - "דמויות מ___"
 - "חלקים של___"
 - "מילים שאפשר להוסיף להן את המילה ___"
+- "שמות של ___"
+- "סלנג ל___"
+- "מילים נרדפות ל___"
 
 החזר תשובה בפורמט JSON בלבד (ללא טקסט נוסף):
 {
@@ -108,6 +208,7 @@ async function generatePuzzleWithGemini(date) {
 - 4 קבוצות בדיוק
 - כל קבוצה עם 4 מילים בדיוק
 - החזר רק JSON, ללא טקסט אחר
+- אל תשתמש במילים שכבר הופיעו בחידות קודמות!
 `;
 
   try {
@@ -227,22 +328,91 @@ function displayPuzzle(puzzle) {
 }
 
 /**
- * Load existing puzzles
+ * Load existing puzzles from Firestore
  */
-function loadPuzzles() {
+async function loadPuzzles() {
+  const firestore = initFirebase();
+  
+  if (!firestore) {
+    // Fallback to local JSON for validation
+    console.log('⚠️  Loading from local puzzles.json for validation...');
+    try {
+      const data = fs.readFileSync(CONFIG.puzzlesFile, 'utf8');
+      return JSON.parse(data);
+    } catch (error) {
+      return { puzzles: [] };
+    }
+  }
+  
   try {
-    const data = fs.readFileSync(CONFIG.puzzlesFile, 'utf8');
-    return JSON.parse(data);
+    console.log('📥 Loading existing puzzles from Firestore...');
+    const puzzlesRef = firestore.collection('puzzles');
+    const snapshot = await puzzlesRef.orderBy('date', 'desc').limit(100).get();
+    
+    const puzzles = [];
+    snapshot.forEach(doc => {
+      puzzles.push({ id: doc.id, ...doc.data() });
+    });
+    
+    console.log(`   Found ${puzzles.length} existing puzzles`);
+    return { puzzles };
   } catch (error) {
-    console.log('Creating new puzzles file...');
+    console.error('❌ Error loading puzzles from Firestore:', error.message);
     return { puzzles: [] };
   }
 }
 
 /**
- * Save puzzle to puzzles.json
+ * Save puzzle to Firestore
  */
-function savePuzzle(puzzle, data) {
+async function savePuzzle(puzzle, data) {
+  const firestore = initFirebase();
+  
+  if (!firestore) {
+    console.error('❌ Cannot save: Firebase not initialized');
+    console.log('💡 Falling back to local JSON file...');
+    savePuzzleToJSON(puzzle, data);
+    return;
+  }
+  
+  try {
+    // Check if puzzle already exists
+    const existingIndex = data.puzzles.findIndex(p => p.date === puzzle.date);
+    
+    if (existingIndex >= 0) {
+      console.log(`\n⚠️  Puzzle for ${puzzle.date} already exists in Firestore.`);
+    }
+    
+    // Save to Firestore (using date as document ID)
+    const puzzleRef = firestore.collection('puzzles').doc(puzzle.date);
+    await puzzleRef.set({
+      date: puzzle.date,
+      words: puzzle.words,
+      groups: puzzle.groups,
+      createdAt: new Date(),
+      generatedBy: 'gemini-ai'
+    });
+    
+    console.log(`✅ Saved puzzle for ${puzzle.date} to Firestore`);
+    
+    // Also update local cache
+    if (existingIndex >= 0) {
+      data.puzzles[existingIndex] = puzzle;
+    } else {
+      data.puzzles.push(puzzle);
+    }
+    
+  } catch (error) {
+    console.error('❌ Error saving to Firestore:', error.message);
+    console.log('💡 Falling back to local JSON file...');
+    savePuzzleToJSON(puzzle, data);
+  }
+}
+
+/**
+ * Fallback: Save puzzle to puzzles.json (legacy)
+ */
+function savePuzzleToJSON(puzzle, data) {
   // Check if puzzle already exists
   const existingIndex = data.puzzles.findIndex(p => p.date === puzzle.date);
   
@@ -260,7 +430,7 @@ function savePuzzle(puzzle, data) {
   
   // Save to file
   fs.writeFileSync(CONFIG.puzzlesFile, JSON.stringify(data, null, 2), 'utf8');
-  console.log(`💾 Saved to ${CONFIG.puzzlesFile}`);
+  console.log(`💾 Saved to ${CONFIG.puzzlesFile} (local fallback)`);
 }
 
 /**
@@ -273,7 +443,7 @@ async function main() {
     force: args.includes('--force'),
     stats: args.includes('--stats'),
     allowReuse: args.includes('--allow-reuse'),
-    retry: parseInt(args.find(arg => arg.startsWith('--retry='))?.split('=')[1]) || 3,
+    retry: parseInt(args.find(arg => arg.startsWith('--retry='))?.split('=')[1]) || 5, // Increased default
     days: parseInt(args.find(arg => arg.startsWith('--days='))?.split('=')[1]) || 
           (args.includes('--days') ? parseInt(args[args.indexOf('--days') + 1]) : 1),
     date: args.find(arg => arg.startsWith('--date='))?.split('=')[1] ||
@@ -282,10 +452,10 @@ async function main() {
   
   console.log('\n🎮 Connections - Gemini AI Puzzle Generator');
   console.log(`🤖 Using model: ${CONFIG.model}`);
-  console.log(`🎯 Mode: ${flags.preview ? 'Preview' : 'Generate & Save'}`);
+  console.log(`🎯 Mode: ${flags.preview ? 'Preview' : 'Generate & Save to Firestore'}`);
   console.log(`🔍 Duplicate Check: ${flags.allowReuse ? 'Disabled' : 'Enabled'}`);
   
-  const data = loadPuzzles();
+  const data = await loadPuzzles();
   
   // Show stats if requested
   if (flags.stats) {
@@ -334,6 +504,9 @@ async function main() {
   
   console.log(`\n📅 Generating puzzles for: ${datesToGenerate.join(', ')}`);
   
+  // Track failed dates for exit code
+  const failedDates = [];
+  
   // Generate puzzles
   for (const date of datesToGenerate) {
     let attempts = 0;
@@ -342,12 +515,14 @@ async function main() {
     while (attempts < flags.retry && !success) {
       attempts++;
       if (attempts > 1) {
-        console.log(`\n🔄 Retry attempt ${attempts}/${flags.retry}...`);
+        console.log(`\n🔄 Retry attempt ${attempts}/${flags.retry} (looking for unique words)...`);
+        // Add a small delay between retries
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
       try {
-        // Generate
-        const puzzle = await generatePuzzleWithGemini(date);
+        // Generate (pass existing puzzles so Gemini knows what to avoid)
+        const puzzle = await generatePuzzleWithGemini(date, data.puzzles);
         
         // Validate structure
         const validation = validatePuzzle(puzzle);
@@ -377,7 +552,7 @@ async function main() {
         // Save or preview
         if (!flags.preview) {
           if (isUnique || flags.force) {
-            savePuzzle(puzzle, data);
+            await savePuzzle(puzzle, data);
             console.log('\n✅ Success!');
             success = true;
           } else {
@@ -410,12 +585,23 @@ async function main() {
     
     if (!success && !flags.preview) {
       console.log(`\n⚠️  Could not generate valid puzzle for ${date} after ${flags.retry} attempts`);
+      failedDates.push(date);
     }
+  }
+  
+  // Exit with error code if any puzzles failed (so CI can detect and retry with force)
+  if (failedDates.length > 0) {
+    console.log(`\n❌ Failed to generate unique puzzles for: ${failedDates.join(', ')}`);
+    console.log('💡 Run with --force to save anyway\n');
+    process.exit(1);
   }
   
   console.log('\n🎉 Done!\n');
 }
 
 // Run
-main().catch(console.error);
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
 

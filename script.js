@@ -243,6 +243,70 @@ function revealSolutions() {
 //   });
 // });
 
+// Load puzzle from Firestore by date
+async function loadPuzzleFromFirestore(dateStr) {
+  if (!db) {
+    console.log('Firestore not available');
+    return null;
+  }
+  
+  try {
+    const puzzleRef = doc(db, 'puzzles', dateStr);
+    const puzzleSnap = await getDoc(puzzleRef);
+    
+    if (puzzleSnap.exists()) {
+      const data = puzzleSnap.data();
+      console.log(`Puzzle loaded from Firestore for ${dateStr}`);
+      return {
+        date: dateStr,
+        words: data.words,
+        groups: data.groups
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error loading puzzle from Firestore:', error);
+    return null;
+  }
+}
+
+// Load all past puzzles for archive (only up to today, not future)
+async function loadArchivePuzzles() {
+  if (!db) {
+    console.log('Firestore not available for archive');
+    return [];
+  }
+  
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const puzzlesRef = collection(db, 'puzzles');
+    const q = query(
+      puzzlesRef,
+      where('date', '<=', today),
+      orderBy('date', 'desc'),
+      limit(30) // Load last 30 puzzles for archive
+    );
+    
+    const snapshot = await getDocs(q);
+    const puzzles = [];
+    
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      puzzles.push({
+        date: data.date || docSnap.id,
+        words: data.words,
+        groups: data.groups
+      });
+    });
+    
+    console.log(`Loaded ${puzzles.length} archive puzzles from Firestore`);
+    return puzzles;
+  } catch (error) {
+    console.error('Error loading archive puzzles:', error);
+    return [];
+  }
+}
+
 // Load puzzle based on today's date
 async function loadTodaysPuzzle() {
   const today = new Date().toISOString().split('T')[0];
@@ -253,20 +317,23 @@ async function loadTodaysPuzzle() {
   document.getElementById('game-container')?.classList.remove('practice-mode');
   
   try {
-    // First try to load from JSON
-    const response = await fetch('puzzles.json');
-    const data = await response.json();
+    // Wait for Firebase auth to be ready (needed for Firestore rules)
+    await waitForAuth(3000);
     
-    // Store all puzzles for archive feature
-    allPuzzles = data.puzzles || [];
+    // Try to load today's puzzle from Firestore
+    puzzle = await loadPuzzleFromFirestore(today);
     
-    puzzle = data.puzzles.find(p => p.date === today);
-    
-    // If no puzzle for today, generate one
+    // If no puzzle for today, generate one as fallback
     if (!puzzle) {
-      console.log('No puzzle found for today, generating new one...');
+      console.log('No puzzle found in Firestore for today, generating new one...');
       puzzle = puzzleGenerator.generatePuzzle(today);
     }
+    
+    // Load archive puzzles in the background (for archive feature)
+    loadArchivePuzzles().then(puzzles => {
+      allPuzzles = puzzles;
+      console.log('Archive puzzles loaded:', allPuzzles.length);
+    });
     
     if (puzzle) {
       puzzle.groups.forEach((group, index) => {
@@ -1290,16 +1357,29 @@ try {
 // ============================================
 
 // Show archive modal
-window.showArchiveModal = function() {
+window.showArchiveModal = async function() {
   const modal = document.getElementById('archiveModal');
   const listContainer = document.getElementById('archivePuzzleList');
   
   if (!modal || !listContainer) return;
   
-  // Populate puzzle list
-  populateArchiveList(listContainer);
+  // Show loading state
+  listContainer.innerHTML = `
+    <div class="archive-empty">
+      <div class="archive-empty-icon">⏳</div>
+      <p>טוען חידות מהארכיון...</p>
+    </div>
+  `;
   
   modal.style.display = 'flex';
+  
+  // Load archive puzzles if not already loaded
+  if (allPuzzles.length === 0) {
+    allPuzzles = await loadArchivePuzzles();
+  }
+  
+  // Populate puzzle list
+  populateArchiveList(listContainer);
   
   // Close on background click
   modal.onclick = (e) => {
@@ -1366,7 +1446,7 @@ function formatHebrewDate(dateString) {
 }
 
 // Load archived puzzle
-window.loadArchivedPuzzle = function(dateString) {
+window.loadArchivedPuzzle = async function(dateString) {
   const today = new Date().toISOString().split('T')[0];
   
   // If selecting today's puzzle, just reload normally
@@ -1376,8 +1456,14 @@ window.loadArchivedPuzzle = function(dateString) {
     return;
   }
   
-  // Find the puzzle for the selected date
-  const selectedPuzzle = allPuzzles.find(p => p.date === dateString);
+  // Find the puzzle in cache first
+  let selectedPuzzle = allPuzzles.find(p => p.date === dateString);
+  
+  // If not in cache, try to load from Firestore
+  if (!selectedPuzzle) {
+    console.log(`Puzzle not in cache, loading from Firestore: ${dateString}`);
+    selectedPuzzle = await loadPuzzleFromFirestore(dateString);
+  }
   
   if (!selectedPuzzle) {
     alert('החידה לא נמצאה');
