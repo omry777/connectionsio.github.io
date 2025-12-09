@@ -52,9 +52,10 @@ jobs:
           echo "✅ Firebase service account configured"
       
       - name: 🤖 Generate puzzle with Gemini AI
+        id: generate
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: gemini-2.5-pro
+          GEMINI_MODEL: gemini-2.5-flash
           FIREBASE_SERVICE_ACCOUNT_PATH: ./firebase-service-account.json
           FIREBASE_PROJECT_ID: connectionsio
         run: |
@@ -66,21 +67,31 @@ jobs:
           
           # Build the date argument
           DATE_ARG=""
+          START_DATE=""
           if [ -n "${{ github.event.inputs.date }}" ]; then
             DATE_ARG="--date ${{ github.event.inputs.date }}"
+            START_DATE="${{ github.event.inputs.date }}"
             echo "📅 Generating $DAYS puzzle(s) starting from ${{ github.event.inputs.date }}"
           else
-            echo "📅 Generating $DAYS puzzle(s) starting from tomorrow"
+            START_DATE=$(date -d "+1 day" +%Y-%m-%d)
+            echo "📅 Generating $DAYS puzzle(s) starting from tomorrow ($START_DATE)"
           fi
           
+          # Save parameters for email summary
+          echo "days=$DAYS" >> $GITHUB_OUTPUT
+          echo "start_date=$START_DATE" >> $GITHUB_OUTPUT
+          echo "retry=$RETRY" >> $GITHUB_OUTPUT
+          
           # If force is explicitly requested, use it directly
+          FORCE_USED="false"
           if [ "${{ github.event.inputs.force }}" == "true" ]; then
             echo "⚠️  Force mode enabled - will save even with duplicates"
-            node generate-puzzle-gemini.js $DATE_ARG --days $DAYS --retry=$RETRY --force
+            FORCE_USED="true"
+            node generate-puzzle-gemini.js $DATE_ARG --days $DAYS --retry=$RETRY --force 2>&1 | tee /tmp/puzzle-output.log
           else
             # Try without force first
             echo "🔄 Attempting to generate unique puzzle (retry: $RETRY times)..."
-            if node generate-puzzle-gemini.js $DATE_ARG --days $DAYS --retry=$RETRY; then
+            if node generate-puzzle-gemini.js $DATE_ARG --days $DAYS --retry=$RETRY 2>&1 | tee /tmp/puzzle-output.log; then
               echo "✅ Successfully generated unique puzzle!"
             else
               # If all retries failed, try one more time with force
@@ -88,9 +99,19 @@ jobs:
               echo "⚠️  All $RETRY attempts failed to find unique words."
               echo "🔄 Final attempt with --force flag..."
               echo ""
-              node generate-puzzle-gemini.js $DATE_ARG --days $DAYS --retry=1 --force
+              FORCE_USED="true"
+              node generate-puzzle-gemini.js $DATE_ARG --days $DAYS --retry=1 --force 2>&1 | tee /tmp/puzzle-output.log
               echo "⚠️  Puzzle saved with --force (may contain duplicate words from past puzzles)"
             fi
+          fi
+          echo "force_used=$FORCE_USED" >> $GITHUB_OUTPUT
+          
+          # Extract puzzle details from output for email
+          if [ -f /tmp/puzzle-output.log ]; then
+            # Get the last generated puzzle summary (categories and words)
+            echo "puzzle_log<<EOF" >> $GITHUB_OUTPUT
+            cat /tmp/puzzle-output.log >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
           fi
       
       - name: 🧹 Cleanup credentials
@@ -102,4 +123,47 @@ jobs:
           echo "✅ Puzzle generation complete!"
           echo "📊 Puzzles are now stored in Firebase Firestore"
           echo "🔗 Check the admin dashboard to verify"
+
+      - name: 📧 Send email notification
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          # Gmail SMTP settings (hardcoded - public info)
+          server_address: smtp.gmail.com
+          server_port: 587
+          # Email credentials - set MAIL_USERNAME and MAIL_PASSWORD in repository secrets
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "🧩 Daily Puzzle Generation - ${{ job.status }} - ${{ steps.generate.outputs.start_date }}"
+          to: ${{ secrets.MAIL_USERNAME }}
+          from: "Connections.io Bot <${{ secrets.MAIL_USERNAME }}>"
+          body: |
+            # Daily Puzzle Generation Report
+            
+            **Status:** ${{ job.status }}
+            **Date:** ${{ steps.generate.outputs.start_date }}
+            **Days Generated:** ${{ steps.generate.outputs.days }}
+            **Retries Configured:** ${{ steps.generate.outputs.retry }}
+            **Force Mode Used:** ${{ steps.generate.outputs.force_used }}
+            
+            ---
+            
+            ## Workflow Details
+            - **Repository:** ${{ github.repository }}
+            - **Run ID:** ${{ github.run_id }}
+            - **Triggered by:** ${{ github.event_name }}
+            - **Run URL:** https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            ---
+            
+            ## Generation Output
+            
+            ```
+            ${{ steps.generate.outputs.puzzle_log }}
+            ```
+            
+            ---
+            
+            Check the [admin dashboard](https://connectionsio.github.io/admin.html) to verify the puzzle.
+          content_type: text/markdown
 
