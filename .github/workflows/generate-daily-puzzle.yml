@@ -18,7 +18,7 @@ on:
         type: number
         default: 1
       force:
-        description: 'Force save even if duplicate words exist (NOT recommended)'
+        description: 'Force regenerate even if puzzle exists & save with duplicates'
         required: false
         type: boolean
         default: false
@@ -51,7 +51,38 @@ jobs:
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > firebase-service-account.json
           echo "✅ Firebase service account configured"
       
+      - name: 🔍 Check if puzzle already exists
+        id: check
+        env:
+          FIREBASE_SERVICE_ACCOUNT_PATH: ./firebase-service-account.json
+          FIREBASE_PROJECT_ID: connectionsio
+        run: |
+          # Determine the target date
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            TARGET_DATE="${{ github.event.inputs.date }}"
+          else
+            TARGET_DATE=$(date -d "+1 day" +%Y-%m-%d)
+          fi
+          echo "target_date=$TARGET_DATE" >> $GITHUB_OUTPUT
+          
+          # For manual triggers with force option, skip the check
+          if [ "${{ github.event.inputs.force }}" == "true" ]; then
+            echo "⚠️  Force mode enabled - skipping existence check"
+            echo "puzzle_exists=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check if puzzle exists
+          if node check-puzzle-exists.js --date "$TARGET_DATE"; then
+            echo "puzzle_exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Puzzle already exists for $TARGET_DATE - will skip generation"
+          else
+            echo "puzzle_exists=false" >> $GITHUB_OUTPUT
+            echo "📭 No puzzle found for $TARGET_DATE - will generate"
+          fi
+      
       - name: 🤖 Generate puzzle with Gemini AI
+        if: steps.check.outputs.puzzle_exists != 'true'
         id: generate
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -119,19 +150,25 @@ jobs:
         run: rm -f firebase-service-account.json
       
       - name: 📢 Summary
+        if: steps.check.outputs.puzzle_exists != 'true'
         run: |
           echo "✅ Puzzle generation complete!"
           echo "📊 Puzzles are now stored in Firebase Firestore"
           echo "🔗 Check the admin dashboard to verify"
+      
+      - name: ⏭️ Skipped Summary
+        if: steps.check.outputs.puzzle_exists == 'true'
+        run: |
+          echo "⏭️ Puzzle generation skipped!"
+          echo "📅 Puzzle for ${{ steps.check.outputs.target_date }} already exists in Firebase"
+          echo "💡 Use 'force' option to regenerate anyway"
 
-      - name: 📧 Send email notification
-        if: always()
+      - name: 📧 Send email notification (Generated)
+        if: always() && steps.check.outputs.puzzle_exists != 'true'
         uses: dawidd6/action-send-mail@v3
         with:
-          # Gmail SMTP settings (hardcoded - public info)
           server_address: smtp.gmail.com
           server_port: 587
-          # Email credentials - set MAIL_USERNAME and MAIL_PASSWORD in repository secrets
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: "🧩 Daily Puzzle Generation - ${{ job.status }} - ${{ steps.generate.outputs.start_date }}"
@@ -165,5 +202,38 @@ jobs:
             ---
             
             Check the [admin dashboard](https://connectionsio.github.io/admin.html) to verify the puzzle.
+          content_type: text/markdown
+
+      - name: 📧 Send email notification (Skipped)
+        if: steps.check.outputs.puzzle_exists == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "⏭️ Daily Puzzle Generation - Skipped - ${{ steps.check.outputs.target_date }}"
+          to: ${{ secrets.MAIL_USERNAME }}
+          from: "Connections.io Bot <${{ secrets.MAIL_USERNAME }}>"
+          body: |
+            # Daily Puzzle Generation - Skipped
+            
+            **Status:** Skipped ⏭️
+            **Date:** ${{ steps.check.outputs.target_date }}
+            **Reason:** Puzzle already exists in Firebase
+            
+            ---
+            
+            ## Workflow Details
+            - **Repository:** ${{ github.repository }}
+            - **Run ID:** ${{ github.run_id }}
+            - **Triggered by:** ${{ github.event_name }}
+            - **Run URL:** https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            ---
+            
+            💡 To regenerate anyway, trigger the workflow manually with the **force** option enabled.
+            
+            Check the [admin dashboard](https://connectionsio.github.io/admin.html) to verify the existing puzzle.
           content_type: text/markdown
 
