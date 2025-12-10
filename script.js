@@ -1165,7 +1165,7 @@ async function saveUserGameResult(won, mistakes, timeElapsed) {
       timeElapsed: timeElapsed,
       timestamp: new Date(),
       // Calculate score: lower is better (mistakes * 100 + time)
-      score: (mistakes * 100) + timeElapsed
+      score: (mistakes * 1000) + timeElapsed
     });
     console.log('User game result saved successfully to:', userGameRef.path);
   } catch (error) {
