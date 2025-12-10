@@ -119,6 +119,50 @@ export class GameAnalytics {
     return this.getTodayStats() !== null;
   }
 
+  // Check if a specific puzzle date was solved (won) - checks both regular and archive solved puzzles
+  wasPuzzleSolved(dateString) {
+    // Check regular game history
+    const data = this.getData();
+    const gameResult = data.history[dateString];
+    if (gameResult && gameResult.won === true) {
+      return true;
+    }
+    
+    // Check archive solved puzzles (for puzzles solved in practice mode)
+    const archiveSolved = this.getArchiveSolvedDates();
+    return archiveSolved.includes(dateString);
+  }
+
+  // Get all solved puzzle dates
+  getSolvedDates() {
+    const data = this.getData();
+    const regularSolved = Object.entries(data.history)
+      .filter(([date, game]) => game.won === true)
+      .map(([date]) => date);
+    
+    const archiveSolved = this.getArchiveSolvedDates();
+    
+    // Combine and deduplicate
+    return [...new Set([...regularSolved, ...archiveSolved])];
+  }
+
+  // Track archive/practice mode solved puzzles separately
+  recordArchivePuzzleSolved(puzzleDate) {
+    const key = 'connections_archive_solved';
+    const solvedDates = this.getArchiveSolvedDates();
+    if (!solvedDates.includes(puzzleDate)) {
+      solvedDates.push(puzzleDate);
+      localStorage.setItem(key, JSON.stringify(solvedDates));
+    }
+  }
+
+  // Get list of archive puzzle dates that were solved
+  getArchiveSolvedDates() {
+    const key = 'connections_archive_solved';
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : [];
+  }
+
   // Get distribution of results (for visualization)
   getResultsDistribution() {
     const data = this.getData();

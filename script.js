@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getFirestore, collection, collectionGroup, addDoc, doc, getDoc, setDoc, increment, query, orderBy, limit, getDocs, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { analytics } from './analytics.js';
+import { analytics } from './analytics.js?v=3';
 import { puzzleGenerator } from './puzzleGenerator.js';
 
 // Get Firebase Auth UID (set after anonymous sign-in)
@@ -156,7 +156,9 @@ let mistakesCount = 0;
 let gameStartTime = null;
 let gameActive = false;
 let isPracticeMode = false; // Track if playing archived puzzle
+let currentPuzzleDate = null; // Track the date of the current puzzle
 let allPuzzles = []; // Store all puzzles for archive feature
+let previousGuesses = new Set(); // Track previous wrong guesses to avoid duplicate penalties
 const dots = document.querySelectorAll('.dot');
 const totalDots = dots.length;
 
@@ -176,9 +178,14 @@ function endGame(won = false) {
   gameActive = false;
   const timeElapsed = Math.floor((Date.now() - gameStartTime) / 1000);
   
-  // If in practice mode (archive puzzle), don't save anything
+  // If in practice mode (archive puzzle), don't save to main stats but track solved puzzle
   if (isPracticeMode) {
     console.log('Practice mode - not counting in statistics');
+    // Record that this archived puzzle was solved (for the checkmark in archive list)
+    if (won && currentPuzzleDate) {
+      analytics.recordArchivePuzzleSolved(currentPuzzleDate);
+      console.log(`Recorded archive puzzle solved: ${currentPuzzleDate}`);
+    }
     const stats = analytics.getStats();
     finishEndGame(won, stats, timeElapsed, true); // treat as "replay"
     return;
@@ -311,6 +318,9 @@ async function loadArchivePuzzles() {
 async function loadTodaysPuzzle() {
   const today = new Date().toISOString().split('T')[0];
   
+  // Set current puzzle date
+  currentPuzzleDate = today;
+  
   // Reset practice mode
   isPracticeMode = false;
   hideArchiveBanner();
@@ -430,6 +440,17 @@ function toggleSelection(item, word) {
 
 // Check if selected items form a valid group
 function checkGroup() {
+  // Create a unique key for this guess (sorted to ensure consistent ordering)
+  const guessKey = [...selectedItems].sort().join('|');
+  
+  // Check if this exact guess was already made
+  if (previousGuesses.has(guessKey)) {
+    showInfoBanner('כבר ניחשת את המילים האלו.');
+    deselectAll();
+    selectedItems = [];
+    return; // Don't count as mistake
+  }
+  
   const matchedGroup = puzzle.groups.find(group =>
     group.words.every(word => selectedItems.includes(word))
   );
@@ -449,6 +470,20 @@ function checkGroup() {
       setTimeout(() => endGame(true), 1000);
     }
   } else {
+    // Add to previous guesses (only wrong guesses)
+    previousGuesses.add(guessKey);
+    
+    // Check if 3 out of 4 words match any group (one away!)
+    const isOneAway = puzzle.groups.some(group => {
+      if (group.guessed) return false; // Skip already guessed groups
+      const matchCount = group.words.filter(word => selectedItems.includes(word)).length;
+      return matchCount === 3;
+    });
+    
+    if (isOneAway) {
+      showInfoBanner('זה היה ממש קרוב!', 'warning');
+    }
+    
     showWrongNotification();
     deselectAll();
     markMistake();
@@ -576,6 +611,23 @@ function showWrongNotification() {
     notification.classList.remove('show');
     setTimeout(() => notification.remove(), 300);
   }, 2000);
+}
+
+// Show info banner (for "one away" and "already guessed" messages)
+function showInfoBanner(message, type = 'info') {
+  const existing = document.querySelector('.info-banner');
+  if (existing) existing.remove();
+  
+  const banner = document.createElement('div');
+  banner.className = `info-banner info-banner-${type}`;
+  banner.innerHTML = `<div class="hebrew-text">${message}</div>`;
+  document.body.appendChild(banner);
+  
+  setTimeout(() => banner.classList.add('show'), 10);
+  setTimeout(() => {
+    banner.classList.remove('show');
+    setTimeout(() => banner.remove(), 300);
+  }, 2500);
 }
 
 // Show failure modal (instead of alert)
@@ -1419,6 +1471,9 @@ function populateArchiveList(container) {
     // Format date in Hebrew style
     const formattedDate = formatHebrewDate(p.date);
     
+    // Check if this puzzle was solved by the user
+    const wasSolved = analytics.wasPuzzleSolved(p.date);
+    
     return `
       <div class="archive-puzzle-item ${isToday ? 'is-today' : ''}" onclick="loadArchivedPuzzle('${p.date}')">
         <div class="puzzle-date-info">
@@ -1428,7 +1483,7 @@ function populateArchiveList(container) {
           </div>
           <div class="puzzle-day-name">יום ${dayName}</div>
         </div>
-        <div class="puzzle-play-arrow">◀</div>
+        ${wasSolved ? '<div class="puzzle-solved-badge">✓</div>' : '<div class="puzzle-play-arrow">◀</div>'}
       </div>
     `;
   }).join('');
@@ -1481,6 +1536,7 @@ window.loadArchivedPuzzle = async function(dateString) {
   
   // Set practice mode
   isPracticeMode = true;
+  currentPuzzleDate = dateString;
   
   // Reset game state
   resetGameState();
@@ -1527,12 +1583,13 @@ function resetGameState() {
   selectedItems = [];
   mistakesCount = 0;
   gameActive = false;
-  
+  previousGuesses = new Set(); // Reset previous guesses tracking
+
   // Reset mistake dots
   document.querySelectorAll('.dot').forEach(dot => {
     dot.classList.remove('red');
   });
-  
+
   // Clear revealed groups
   const revealedGroups = document.getElementById('revealed-groups');
   if (revealedGroups) {
