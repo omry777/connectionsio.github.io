@@ -111,9 +111,14 @@
             transition: all 0.3s ease;
         }
 
-        .login-btn:hover {
+        .login-btn:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
         }
 
         .login-error {
@@ -762,10 +767,11 @@
     <div id="loginScreen" class="login-screen">
         <div class="login-box">
             <h1>🔐 Admin Dashboard</h1>
-            <p>הכנס סיסמה כדי להיכנס לממשק הניהול</p>
-            <input type="password" id="passwordInput" class="login-input" placeholder="סיסמה..." onkeydown="if(event.key==='Enter')login()">
-            <button class="login-btn" onclick="login()">כניסה</button>
-            <p id="loginError" class="login-error">❌ סיסמה שגויה</p>
+            <p>התחבר עם חשבון המנהל שלך</p>
+            <input type="email" id="emailInput" class="login-input" placeholder="אימייל..." dir="ltr" style="margin-bottom: 15px;">
+            <input type="password" id="passwordInput" class="login-input" placeholder="סיסמה..." dir="ltr" onkeydown="if(event.key==='Enter')login()">
+            <button class="login-btn" onclick="login()" id="loginBtn">כניסה</button>
+            <p id="loginError" class="login-error">❌ שגיאה בהתחברות</p>
         </div>
     </div>
 
@@ -773,7 +779,10 @@
     <div id="adminDashboard" class="admin-dashboard">
         <div class="admin-header">
             <h1>🎮 ממשק ניהול Connections</h1>
-            <button class="logout-btn" onclick="logout()">🚪 יציאה</button>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <span id="userEmail" style="color: var(--text-secondary); font-size: 14px;"></span>
+                <button class="logout-btn" onclick="logout()">🚪 יציאה</button>
+            </div>
         </div>
 
         <!-- Stats -->
@@ -915,7 +924,7 @@
                             🗑️ נקה טופס
                         </button>
                         <button class="action-btn" onclick="loadApprovedGroupsIntoPuzzle()" style="background: var(--warning); color: white;">
-                            📥 טען קבוצות מאושרות
+                            📥 טען חידה קיימת
                         </button>
                     </div>
                 </div>
@@ -990,12 +999,11 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-
-        // Admin password (in production, use proper auth!)
-        const ADMIN_PASSWORD = 'connections2024';
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
         let db = null;
+        let auth = null;
+        let currentUser = null;
         let pendingSuggestions = [];
         let approvedGroups = [];
         let existingPuzzles = [];  // Puzzles from Firestore puzzles collection
@@ -1006,39 +1014,108 @@
         if (window.firebaseConfig) {
             const app = initializeApp(window.firebaseConfig);
             db = getFirestore(app);
-            const auth = getAuth(app);
-            signInAnonymously(auth).catch(console.error);
+            auth = getAuth(app);
+            
+            // Listen for auth state changes
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    // User is signed in
+                    currentUser = user;
+                    console.log('User signed in:', user.email);
+                    showDashboard();
+                } else {
+                    // User is signed out
+                    currentUser = null;
+                    showLoginScreen();
+                }
+            });
         }
 
-        // Login
-        window.login = function() {
+        // Login with email and password
+        window.login = async function() {
+            const email = document.getElementById('emailInput').value.trim();
             const password = document.getElementById('passwordInput').value;
-            if (password === ADMIN_PASSWORD) {
-                sessionStorage.setItem('adminLoggedIn', 'true');
-                showDashboard();
-            } else {
-                document.getElementById('loginError').style.display = 'block';
-                document.getElementById('passwordInput').value = '';
+            const loginBtn = document.getElementById('loginBtn');
+            const errorEl = document.getElementById('loginError');
+            
+            if (!email || !password) {
+                errorEl.textContent = '❌ נא למלא אימייל וסיסמה';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            // Show loading state
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'מתחבר...';
+            errorEl.style.display = 'none';
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                // onAuthStateChanged will handle showing the dashboard
+            } catch (error) {
+                console.error('Login error:', error);
+                
+                // User-friendly error messages
+                let errorMessage = '❌ שגיאה בהתחברות';
+                switch (error.code) {
+                    case 'auth/invalid-email':
+                        errorMessage = '❌ כתובת אימייל לא תקינה';
+                        break;
+                    case 'auth/user-disabled':
+                        errorMessage = '❌ החשבון הושבת';
+                        break;
+                    case 'auth/user-not-found':
+                        errorMessage = '❌ משתמש לא נמצא';
+                        break;
+                    case 'auth/wrong-password':
+                        errorMessage = '❌ סיסמה שגויה';
+                        break;
+                    case 'auth/invalid-credential':
+                        errorMessage = '❌ אימייל או סיסמה שגויים';
+                        break;
+                    case 'auth/too-many-requests':
+                        errorMessage = '❌ יותר מדי ניסיונות, נסה שוב מאוחר יותר';
+                        break;
+                }
+                
+                errorEl.textContent = errorMessage;
+                errorEl.style.display = 'block';
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'כניסה';
             }
         };
 
         // Logout
-        window.logout = function() {
-            sessionStorage.removeItem('adminLoggedIn');
+        window.logout = async function() {
+            try {
+                await signOut(auth);
+                // onAuthStateChanged will handle showing the login screen
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+        };
+
+        // Show Login Screen
+        function showLoginScreen() {
             document.getElementById('loginScreen').style.display = 'flex';
             document.getElementById('adminDashboard').style.display = 'none';
-        };
+            document.getElementById('emailInput').value = '';
+            document.getElementById('passwordInput').value = '';
+            document.getElementById('loginError').style.display = 'none';
+        }
 
         // Show Dashboard
         function showDashboard() {
             document.getElementById('loginScreen').style.display = 'none';
             document.getElementById('adminDashboard').style.display = 'block';
+            
+            // Display user email
+            if (currentUser && currentUser.email) {
+                document.getElementById('userEmail').textContent = currentUser.email;
+            }
+            
             loadData();
-        }
-
-        // Check if already logged in
-        if (sessionStorage.getItem('adminLoggedIn') === 'true') {
-            showDashboard();
         }
 
         // Tab switching
@@ -1685,7 +1762,7 @@
             }
         };
 
-        // Load approved groups into puzzle form
+        // Load puzzle data into form - checks puzzles collection first, then approvedGroups
         window.loadApprovedGroupsIntoPuzzle = function() {
             const date = document.getElementById('puzzleDate').value;
             if (!date) {
@@ -1693,9 +1770,32 @@
                 return;
             }
 
+            // First, check if there's an existing puzzle in the puzzles collection
+            const existingPuzzle = existingPuzzles.find(p => p.date === date);
+            if (existingPuzzle && existingPuzzle.groups && existingPuzzle.groups.length > 0) {
+                // Load from existing puzzle
+                const groupEditors = document.querySelectorAll('.group-editor');
+                existingPuzzle.groups.forEach((group, index) => {
+                    if (index < groupEditors.length) {
+                        const editor = groupEditors[index];
+                        const wordInputs = editor.querySelectorAll('.word-input');
+                        const explanationInput = editor.querySelector('.explanation-input');
+
+                        (group.words || []).forEach((word, i) => {
+                            if (wordInputs[i]) wordInputs[i].value = word;
+                        });
+                        explanationInput.value = group.explanation || '';
+                    }
+                });
+
+                showToast(`✅ נטענה חידה קיימת (${existingPuzzle.groups.length} קבוצות)`);
+                return;
+            }
+
+            // Fallback: check approvedGroups collection
             const groupsForDate = approvedGroups.filter(g => g.date === date);
             if (groupsForDate.length === 0) {
-                showToast('אין קבוצות מאושרות לתאריך זה', true);
+                showToast('אין חידה או קבוצות מאושרות לתאריך זה', true);
                 return;
             }
 
@@ -1713,11 +1813,11 @@
                     group.words.forEach((word, i) => {
                         if (wordInputs[i]) wordInputs[i].value = word;
                     });
-                    explanationInput.value = group.connection;
+                    explanationInput.value = group.connection || '';
                 }
             });
 
-            showToast(`✅ נטענו ${groupsForDate.length} קבוצות`);
+            showToast(`✅ נטענו ${groupsForDate.length} קבוצות מאושרות`);
         };
 
         // Update loadData to also load puzzles
