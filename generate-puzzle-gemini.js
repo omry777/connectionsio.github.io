@@ -120,7 +120,7 @@ async function generatePuzzleWithGemini(date, existingPuzzles = []) {
   console.log(`\n🤖 Generating puzzle for ${date} using Gemini ${CONFIG.model}...`);
   
   // Get recently used words to avoid
-  const recentlyUsed = getRecentlyUsedWords(existingPuzzles, 30);
+  const recentlyUsed = getRecentlyUsedWords(existingPuzzles, 14);
   
   let avoidWordsSection = '';
   if (recentlyUsed.words.length > 0) {

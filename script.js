@@ -849,17 +849,25 @@ function createVictoryModal() {
   return modal;
 }
 
-// Share results
+// Share results via WhatsApp
 window.shareResults = function() {
-  const emoji = mistakesCount === 0 ? '🌟' : mistakesCount <= 2 ? '✨' : '💪';
-  const text = `Connections ${emoji}\nטעויות: ${mistakesCount}/4\nרצף: ${analytics.getStats().currentStreak} ימים`;
+  const stats = analytics.getStats();
+  const timeElapsed = Math.floor((Date.now() - gameStartTime) / 1000);
+  const minutes = Math.floor(timeElapsed / 60);
+  const seconds = timeElapsed % 60;
+  const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
   
-  if (navigator.share) {
-    navigator.share({ text, url: window.location.href });
-  } else {
-    navigator.clipboard.writeText(text);
-    alert('התוצאות הועתקו ללוח!');
-  }
+  const emoji = mistakesCount === 0 ? '🌟' : mistakesCount <= 2 ? '✨' : '💪';
+  const text = `חיבורים ${emoji}
+טעויות: ${mistakesCount}/4
+זמן: ${timeStr}
+רצף: ${stats.currentStreak} ימים
+
+🔗 https://omry777.github.io/connectionsio/`;
+  
+  // Open WhatsApp with the share text
+  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+  window.open(whatsappUrl, '_blank');
 }
 
 // Show statistics modal
@@ -1082,15 +1090,102 @@ function updateStatsDisplay() {
 function showAlreadyPlayedMessage(todayStats) {
   const message = document.createElement('div');
   message.className = 'already-played-message hebrew-text';
+  
+  const minutes = Math.floor(todayStats.time / 60);
+  const seconds = todayStats.time % 60;
+  const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  
+  // Build share button (only if won)
+  const shareButton = todayStats.won ? `
+    <button class="btn btn-success" onclick="shareResultsFromMessage(${todayStats.mistakes}, '${timeStr}')">
+      📤 שתף תוצאות
+    </button>
+  ` : '';
+  
   message.innerHTML = `
     <p>כבר שיחקת היום!</p>
     <p>תוצאה: ${todayStats.won ? '✅ ניצחון' : '❌ נכשל'}</p>
-    <p>טעויות: ${todayStats.mistakes}</p>
-    <button class="btn btn-primary" onclick="this.parentElement.remove(); showStatsModal()">
-      הצג סטטיסטיקות
-    </button>
+    <p>טעויות: ${todayStats.mistakes}${todayStats.won ? ` | זמן: ${timeStr}` : ''}</p>
+    <div class="already-played-buttons">
+      <button class="btn btn-primary" onclick="showStatsModal()">
+        📊 סטטיסטיקות
+      </button>
+      <button class="btn btn-secondary" onclick="showSolutionsFromMessage()">
+        👁️ הצג פתרונות
+      </button>
+      ${shareButton}
+    </div>
   `;
   document.querySelector('.container').prepend(message);
+}
+
+// Show solutions from the already played message (without removing the message)
+window.showSolutionsFromMessage = function() {
+  // Check if solutions are already revealed to prevent duplicates
+  const revealedGroups = document.getElementById('revealed-groups');
+  if (revealedGroups && revealedGroups.children.length > 0) {
+    // Solutions already shown, just scroll to them
+    revealedGroups.scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
+  
+  // Reveal all groups
+  revealRemainingGroups();
+  
+  // Clear the grid to show only the revealed groups
+  const grid = document.getElementById('grid');
+  if (grid) {
+    grid.innerHTML = '';
+  }
+}
+
+// Copy text to clipboard with fallback for non-secure contexts
+function copyToClipboard(text) {
+  // Try modern clipboard API first
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  
+  // Fallback for non-secure contexts (HTTP)
+  return new Promise((resolve, reject) => {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    textArea.style.top = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      if (successful) {
+        resolve();
+      } else {
+        reject(new Error('Copy command failed'));
+      }
+    } catch (err) {
+      document.body.removeChild(textArea);
+      reject(err);
+    }
+  });
+}
+
+// Share results from the already played message via WhatsApp
+window.shareResultsFromMessage = function(mistakes, timeStr) {
+  const stats = analytics.getStats();
+  const emoji = mistakes === 0 ? '🌟' : mistakes <= 2 ? '✨' : '💪';
+  const text = `חיבורים ${emoji}
+טעויות: ${mistakes}/4
+זמן: ${timeStr}
+רצף: ${stats.currentStreak} ימים
+
+🔗 https://omry777.github.io/connectionsio/`;
+  
+  // Open WhatsApp with the share text
+  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+  window.open(whatsappUrl, '_blank');
 }
 
 // Wait for Firebase Auth to be ready (with timeout)
@@ -1165,7 +1260,7 @@ async function saveUserGameResult(won, mistakes, timeElapsed) {
       timeElapsed: timeElapsed,
       timestamp: new Date(),
       // Calculate score: lower is better (mistakes * 100 + time)
-      score: (mistakes * 1000) + timeElapsed
+      score: (mistakes * 500) + timeElapsed
     });
     console.log('User game result saved successfully to:', userGameRef.path);
   } catch (error) {
