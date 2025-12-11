@@ -8,7 +8,21 @@
  *   npm run preview-gemini               # Preview without saving
  *   node generate-puzzle-gemini.js --date 2025-12-01  # Specific date
  * 
- * Puzzles are saved directly to Firebase Firestore (not to puzzles.json)
+ * Options:
+ *   --preview           Preview without saving to Firestore
+ *   --force             Save even if word pairs conflict with recent puzzles
+ *   --ignore-existing   Ignore approved groups and generate full 4-group puzzle
+ *   --allow-reuse       Disable word pair checking
+ *   --retry=N           Number of retry attempts (default: 5)
+ *   --days=N            Generate puzzles for N days
+ *   --date=YYYY-MM-DD   Generate for specific date
+ *   --stats             Show puzzle statistics
+ * 
+ * Features:
+ *   - Avoids word PAIRS that were used together in the last 14 days
+ *     (individual words CAN be reused, just not with the same companions)
+ *   - Fills missing groups if approved groups already exist for a date
+ *   - Saves directly to Firebase Firestore
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -86,20 +100,30 @@ const model = genAI.getGenerativeModel({ model: CONFIG.model });
 const COLORS = ['#f44336', '#4caf50', '#9c27b0', '#2196f3'];
 
 /**
- * Get list of recently used words from existing puzzles
+ * Get word pairs that have been used together in groups (last N days)
+ * A word CAN be reused, but NOT with the same companions from a previous group.
  */
-function getRecentlyUsedWords(existingPuzzles, daysToLookBack = 30) {
+function getRecentWordPairs(existingPuzzles, daysToLookBack = 14) {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - daysToLookBack);
   const cutoffStr = cutoffDate.toISOString().split('T')[0];
   
-  const usedWords = new Set();
+  const wordPairs = new Set();
   const usedExplanations = new Set();
   
   existingPuzzles.forEach(puzzle => {
     if (puzzle.date >= cutoffStr) {
-      puzzle.words?.forEach(word => usedWords.add(word));
       puzzle.groups?.forEach(group => {
+        // Track word pairs (each word paired with its groupmates)
+        const words = group.words || [];
+        for (let i = 0; i < words.length; i++) {
+          for (let j = i + 1; j < words.length; j++) {
+            // Store pair in sorted order for consistency
+            const pair = [words[i], words[j]].sort().join(' + ');
+            wordPairs.add(pair);
+          }
+        }
+        
         if (group.explanation) {
           usedExplanations.add(group.explanation.toLowerCase());
         }
@@ -108,33 +132,101 @@ function getRecentlyUsedWords(existingPuzzles, daysToLookBack = 30) {
   });
   
   return {
-    words: Array.from(usedWords),
+    wordPairs: Array.from(wordPairs),
     explanations: Array.from(usedExplanations)
   };
 }
 
 /**
- * Generate a puzzle using Gemini AI
+ * Load approved groups for a specific date from Firestore
+ * (Loads all and filters locally, same approach as admin.html)
  */
-async function generatePuzzleWithGemini(date, existingPuzzles = []) {
-  console.log(`\n🤖 Generating puzzle for ${date} using Gemini ${CONFIG.model}...`);
+async function loadApprovedGroupsForDate(firestore, date) {
+  if (!firestore) {
+    console.log('   ⚠️  No Firestore connection - cannot check approved groups');
+    return [];
+  }
   
-  // Get recently used words to avoid
-  const recentlyUsed = getRecentlyUsedWords(existingPuzzles, 14);
-  
-  let avoidWordsSection = '';
-  if (recentlyUsed.words.length > 0) {
-    // Show a sample of words to avoid (Gemini has context limits)
-    const wordsToShow = recentlyUsed.words.slice(0, 100);
-    avoidWordsSection = `
-
-⚠️ חשוב מאוד - אל תשתמש במילים הבאות (כבר הופיעו בחידות קודמות):
-${wordsToShow.join(', ')}
-${recentlyUsed.words.length > 100 ? `\n(ועוד ${recentlyUsed.words.length - 100} מילים נוספות)` : ''}
-
-בחר מילים חדשות ומקוריות שלא הופיעו ברשימה למעלה!`;
+  try {
+    console.log(`   🔍 Checking approvedGroups collection for date: ${date}`);
     
-    console.log(`   📋 Avoiding ${recentlyUsed.words.length} recently used words`);
+    // Load ALL approved groups and filter locally (same as admin.html does)
+    const approvedRef = firestore.collection('approvedGroups');
+    const snapshot = await approvedRef.get();
+    
+    const allGroups = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      allGroups.push({
+        id: doc.id,
+        date: data.date,
+        words: data.words,
+        explanation: data.connection || data.explanation,
+        difficulty: data.difficulty
+      });
+    });
+    
+    console.log(`   📊 Total approved groups in collection: ${allGroups.length}`);
+    
+    // Debug: show unique dates in approved groups
+    const uniqueDates = [...new Set(allGroups.map(g => g.date))].sort();
+    if (uniqueDates.length > 0) {
+      console.log(`   📅 Dates with approved groups: ${uniqueDates.join(', ')}`);
+    }
+    
+    // Filter for the specific date
+    const groupsForDate = allGroups.filter(g => g.date === date);
+    
+    if (groupsForDate.length > 0) {
+      console.log(`   ✅ Found ${groupsForDate.length} approved group(s) for ${date}:`);
+      groupsForDate.forEach((g, i) => {
+        console.log(`      ${i + 1}. [${g.words?.join(', ')}] - ${g.explanation}`);
+      });
+    } else {
+      console.log(`   ℹ️  No approved groups found for ${date}`);
+    }
+    
+    return groupsForDate;
+  } catch (error) {
+    console.error('   ❌ Error loading approved groups:', error.message);
+    return [];
+  }
+}
+
+/**
+ * Generate a puzzle using Gemini AI
+ * If existingGroups is provided, only generates the missing groups to fill to 4
+ */
+async function generatePuzzleWithGemini(date, existingPuzzles = [], existingGroups = []) {
+  const groupsNeeded = 4 - existingGroups.length;
+  
+  if (groupsNeeded <= 0) {
+    console.log(`\n✅ Date ${date} already has ${existingGroups.length} groups - no generation needed`);
+    return null;
+  }
+  
+  if (existingGroups.length > 0) {
+    console.log(`\n🤖 Generating ${groupsNeeded} missing groups for ${date} (already have ${existingGroups.length}) using Gemini ${CONFIG.model}...`);
+  } else {
+    console.log(`\n🤖 Generating puzzle for ${date} using Gemini ${CONFIG.model}...`);
+  }
+  
+  // Get recently used word pairs to avoid
+  const recentlyUsed = getRecentWordPairs(existingPuzzles, 14);
+  
+  let avoidPairsSection = '';
+  if (recentlyUsed.wordPairs.length > 0) {
+    // Show a sample of word pairs to avoid (Gemini has context limits)
+    const pairsToShow = recentlyUsed.wordPairs.slice(0, 60);
+    avoidPairsSection = `
+
+⚠️ חשוב מאוד - הימנע משילובי מילים אלה (כבר היו יחד בקבוצה):
+${pairsToShow.join('\n')}
+${recentlyUsed.wordPairs.length > 60 ? `\n(ועוד ${recentlyUsed.wordPairs.length - 60} שילובים נוספים)` : ''}
+
+הכלל: מילה יכולה לחזור, אבל לא באותה קבוצה עם מילה שכבר הייתה איתה יחד!`;
+    
+    console.log(`   📋 Avoiding ${recentlyUsed.wordPairs.length} word pairs from last 14 days`);
   }
   
   let avoidExplanationsSection = '';
@@ -148,33 +240,22 @@ ${explanationsToShow.join('\n')}`;
     console.log(`   📋 Avoiding ${recentlyUsed.explanations.length} recently used themes`);
   }
   
-  const prompt = `
-אתה מומחה במשחק Connections בעברית ומומחה בתרבות הישראלית.
-צור חידת Connections יצירתית ומאתגרת ליום ${date}.
+  // Build existing groups section if we have some
+  let existingGroupsSection = '';
+  let existingWords = [];
+  if (existingGroups.length > 0) {
+    existingWords = existingGroups.flatMap(g => g.words);
+    existingGroupsSection = `
 
-דרישות חשובות:
-- 4 קבוצות, כל קבוצה עם 4 מילים בעברית
-- הקשרים צריכים להיות יצירתיים אבל לא טריוויאליים
-- רמות קושי שונות: 1=קל, 2=בינוני, 3=קשה, 4=מאוד קשה
-- הקשרים יכולים להיות: תרבותיים, היסטוריים, לשוניים, קונספטואליים, משחקי מילים
-- ודא שכל מילה מופיעה רק פעם אחת
-- הסברים צריכים להיות קצרים וברורים (עד 10 מילים)
-- השתמש במילים מעניינות ולא טריוויאליות
-${avoidWordsSection}
-${avoidExplanationsSection}
+📌 קבוצות קיימות שכבר אושרו (אל תשנה אותן, רק השלם את החסרות):
+${existingGroups.map((g, i) => `קבוצה ${i + 1}: [${g.words.join(', ')}] - ${g.explanation}`).join('\n')}
 
-דוגמאות לקשרים מעניינים:
-- "מילים שמסתיימות ב___"
-- "דברים שקשורים ל___"
-- "ביטויים שמתחילים ב___"
-- "דמויות מ___"
-- "חלקים של___"
-- "מילים שאפשר להוסיף להן את המילה ___"
-- "שמות של ___"
-- "סלנג ל___"
-- "מילים נרדפות ל___"
-
-החזר תשובה בפורמט JSON בלבד (ללא טקסט נוסף):
+⚠️ אל תשתמש במילים הבאות (כבר בשימוש בקבוצות הקיימות):
+${existingWords.join(', ')}`;
+  }
+  
+  // Adjust the prompt based on how many groups we need
+  const groupsPrompt = groupsNeeded === 4 ? `
 {
   "date": "${date}",
   "words": ["מילה1", "מילה2", "מילה3", "מילה4", "מילה5", "מילה6", "מילה7", "מילה8", "מילה9", "מילה10", "מילה11", "מילה12", "מילה13", "מילה14", "מילה15", "מילה16"],
@@ -200,15 +281,63 @@ ${avoidExplanationsSection}
       "difficulty": 4
     }
   ]
-}
+}` : `
+{
+  "newGroups": [
+    ${Array(groupsNeeded).fill(`{
+      "words": ["מילה1", "מילה2", "מילה3", "מילה4"],
+      "explanation": "הסבר קצר וברור",
+      "difficulty": ${existingGroups.length + 1}
+    }`).join(',\n    ')}
+  ]
+}`;
 
+  const countInstructions = groupsNeeded === 4 ? `
 חשוב מאוד:
 - כל מילה חייבת להופיע בדיוק פעם אחת
 - 16 מילים בדיוק
 - 4 קבוצות בדיוק
 - כל קבוצה עם 4 מילים בדיוק
 - החזר רק JSON, ללא טקסט אחר
-- אל תשתמש במילים שכבר הופיעו בחידות קודמות!
+- אל תשתמש בשילובי מילים שכבר היו יחד בקבוצות קודמות!` : `
+חשוב מאוד:
+- צור בדיוק ${groupsNeeded} קבוצות חדשות
+- כל קבוצה עם 4 מילים בדיוק
+- אל תשתמש במילים מהקבוצות הקיימות!
+- ${groupsNeeded * 4} מילים חדשות בסך הכל
+- החזר רק JSON, ללא טקסט אחר
+- אל תשתמש בשילובי מילים שכבר היו יחד בקבוצות קודמות!`;
+
+  const prompt = `
+אתה מומחה במשחק Connections בעברית ומומחה בתרבות הישראלית.
+${groupsNeeded === 4 ? `צור חידת Connections יצירתית ומאתגרת ליום ${date}.` : `השלם את החידה ליום ${date} עם ${groupsNeeded} קבוצות נוספות.`}
+${existingGroupsSection}
+
+דרישות חשובות:
+- ${groupsNeeded === 4 ? '4 קבוצות' : `${groupsNeeded} קבוצות חדשות`}, כל קבוצה עם 4 מילים בעברית
+- הקשרים צריכים להיות יצירתיים אבל לא טריוויאליים
+- רמות קושי שונות: 1=קל, 2=בינוני, 3=קשה, 4=מאוד קשה
+- הקשרים יכולים להיות: תרבותיים, היסטוריים, לשוניים, קונספטואליים, משחקי מילים
+- ודא שכל מילה מופיעה רק פעם אחת
+- הסברים צריכים להיות קצרים וברורים (עד 10 מילים)
+- השתמש במילים מעניינות ולא טריוויאליות
+${avoidPairsSection}
+${avoidExplanationsSection}
+
+דוגמאות לקשרים מעניינים:
+- "מילים שמסתיימות ב___"
+- "דברים שקשורים ל___"
+- "ביטויים שמתחילים ב___"
+- "דמויות מ___"
+- "חלקים של___"
+- "מילים שאפשר להוסיף להן את המילה ___"
+- "שמות של ___"
+- "סלנג ל___"
+- "מילים נרדפות ל___"
+
+החזר תשובה בפורמט JSON בלבד (ללא טקסט נוסף):
+${groupsPrompt}
+${countInstructions}
 `;
 
   try {
@@ -224,7 +353,41 @@ ${avoidExplanationsSection}
       jsonText = text.split('```')[1].split('```')[0].trim();
     }
     
-    const puzzleData = JSON.parse(jsonText);
+    const generatedData = JSON.parse(jsonText);
+    
+    // Handle partial generation (filling existing groups)
+    if (existingGroups.length > 0 && generatedData.newGroups) {
+      // Merge existing groups with new ones
+      const allGroups = [
+        ...existingGroups.map((g, i) => ({
+          ...g,
+          color: COLORS[i] || COLORS[0]
+        })),
+        ...generatedData.newGroups.map((g, i) => ({
+          ...g,
+          color: COLORS[existingGroups.length + i] || COLORS[0]
+        }))
+      ];
+      
+      // Sort by difficulty and reassign colors
+      allGroups.sort((a, b) => (a.difficulty || 1) - (b.difficulty || 1));
+      allGroups.forEach((g, i) => {
+        g.color = COLORS[i] || COLORS[0];
+      });
+      
+      // Build complete puzzle
+      const allWords = allGroups.flatMap(g => g.words);
+      
+      return {
+        date,
+        words: allWords,
+        groups: allGroups
+      };
+    }
+    
+    // Full puzzle generation
+    const puzzleData = generatedData;
+    puzzleData.date = date;
     
     // Add colors to groups
     puzzleData.groups = puzzleData.groups.map((group, index) => ({
@@ -443,6 +606,7 @@ async function main() {
     force: args.includes('--force'),
     stats: args.includes('--stats'),
     allowReuse: args.includes('--allow-reuse'),
+    ignoreExisting: args.includes('--ignore-existing'), // Force full generation even if approved groups exist
     retry: parseInt(args.find(arg => arg.startsWith('--retry='))?.split('=')[1]) || 5, // Increased default
     days: parseInt(args.find(arg => arg.startsWith('--days='))?.split('=')[1]) || 
           (args.includes('--days') ? parseInt(args[args.indexOf('--days') + 1]) : 1),
@@ -453,7 +617,8 @@ async function main() {
   console.log('\n🎮 Connections - Gemini AI Puzzle Generator');
   console.log(`🤖 Using model: ${CONFIG.model}`);
   console.log(`🎯 Mode: ${flags.preview ? 'Preview' : 'Generate & Save to Firestore'}`);
-  console.log(`🔍 Duplicate Check: ${flags.allowReuse ? 'Disabled' : 'Enabled'}`);
+  console.log(`🔍 Word Pair Check: ${flags.allowReuse ? 'Disabled' : 'Enabled (avoids recent pairs)'}`);
+  console.log(`📋 Use Existing Groups: ${flags.ignoreExisting ? 'No (full regeneration)' : 'Yes (fill missing)'}`);
   
   const data = await loadPuzzles();
   
@@ -507,22 +672,43 @@ async function main() {
   // Track failed dates for exit code
   const failedDates = [];
   
+  // Get Firestore reference for checking approved groups
+  const firestore = initFirebase();
+  
   // Generate puzzles
   for (const date of datesToGenerate) {
     let attempts = 0;
     let success = false;
     
+    // Check for existing approved groups for this date (unless --ignore-existing flag is set)
+    let existingApprovedGroups = [];
+    if (!flags.ignoreExisting) {
+      console.log(`\n🔎 Checking for existing approved groups for ${date}...`);
+      existingApprovedGroups = await loadApprovedGroupsForDate(firestore, date);
+      if (existingApprovedGroups.length > 0) {
+        console.log(`   ➡️  Will generate ${4 - existingApprovedGroups.length} more group(s) to complete the puzzle`);
+      }
+    } else {
+      console.log(`\n⏭️  Skipping approved groups check (--ignore-existing flag)`);
+    }
+    
     while (attempts < flags.retry && !success) {
       attempts++;
       if (attempts > 1) {
-        console.log(`\n🔄 Retry attempt ${attempts}/${flags.retry} (looking for unique words)...`);
+        console.log(`\n🔄 Retry attempt ${attempts}/${flags.retry} (looking for unique word pairs)...`);
         // Add a small delay between retries
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
       try {
-        // Generate (pass existing puzzles so Gemini knows what to avoid)
-        const puzzle = await generatePuzzleWithGemini(date, data.puzzles);
+        // Generate (pass existing puzzles and approved groups so Gemini can fill the gaps)
+        const puzzle = await generatePuzzleWithGemini(date, data.puzzles, existingApprovedGroups);
+        
+        // If puzzle is null, means date already has 4 groups
+        if (!puzzle) {
+          success = true;
+          continue;
+        }
         
         // Validate structure
         const validation = validatePuzzle(puzzle);
