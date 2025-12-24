@@ -59,6 +59,51 @@ export function checkForDuplicateWords(newPuzzle, existingPuzzles) {
 }
 
 /**
+ * Check if any group in the new puzzle overlaps too much with a previous group
+ * Returns groups that have 3+ words in common with a previous group (essentially duplicated groups)
+ */
+export function checkForDuplicateGroups(newPuzzle, existingPuzzles, minOverlap = 3) {
+  const duplicateGroups = [];
+  
+  // Build a map of all previous groups with their words (as lowercase Sets)
+  const previousGroups = [];
+  existingPuzzles.forEach(puzzle => {
+    puzzle.groups.forEach(group => {
+      previousGroups.push({
+        date: puzzle.date,
+        explanation: group.explanation,
+        words: new Set(group.words.map(w => w.toLowerCase()))
+      });
+    });
+  });
+  
+  // Check each group in the new puzzle
+  newPuzzle.groups.forEach((newGroup, groupIndex) => {
+    const newGroupWords = new Set(newGroup.words.map(w => w.toLowerCase()));
+    
+    // Compare against all previous groups
+    for (const prevGroup of previousGroups) {
+      // Count overlapping words
+      const overlap = [...newGroupWords].filter(word => prevGroup.words.has(word));
+      
+      if (overlap.length >= minOverlap) {
+        duplicateGroups.push({
+          groupIndex,
+          newGroupExplanation: newGroup.explanation,
+          newGroupWords: newGroup.words,
+          previousDate: prevGroup.date,
+          previousExplanation: prevGroup.explanation,
+          overlappingWords: overlap,
+          overlapCount: overlap.length
+        });
+      }
+    }
+  });
+  
+  return duplicateGroups;
+}
+
+/**
  * Check if explanation is too similar to existing ones
  */
 export function checkForSimilarExplanations(newPuzzle, existingPuzzles) {
@@ -128,11 +173,18 @@ export function getWordUsageStats(existingPuzzles) {
 
 /**
  * Main validation function
+ * 
+ * Validation rules:
+ * - Fails if puzzle is an exact duplicate (same date or identical words)
+ * - Fails if any group has 3+ words that were in the SAME group in a previous puzzle
+ * - Individual word reuse across DIFFERENT groups is allowed (just a warning)
+ * - Similar explanations are allowed (just a warning)
  */
 export function validatePuzzleUniqueness(newPuzzle, existingPuzzles, options = {}) {
   const {
-    allowWordReuse = false,  // Set to true to allow words to be reused
+    allowWordReuse = true,   // Individual word reuse is now allowed by default
     allowSimilarExplanations = true,
+    minGroupOverlap = 3,     // Fail if a group has this many words from a previous group
     verbose = true
   } = options;
   
@@ -151,16 +203,39 @@ export function validatePuzzleUniqueness(newPuzzle, existingPuzzles, options = {
     return results;
   }
   
-  // Check for duplicate words
+  // Check for duplicate groups (3+ words from the same previous group)
+  const duplicateGroups = checkForDuplicateGroups(newPuzzle, existingPuzzles, minGroupOverlap);
+  if (duplicateGroups.length > 0) {
+    results.valid = false;
+    duplicateGroups.forEach(({ groupIndex, newGroupExplanation, overlappingWords, previousDate, previousExplanation, overlapCount }) => {
+      results.errors.push(
+        `Group "${newGroupExplanation}" has ${overlapCount}/4 words from group "${previousExplanation}" (${previousDate}): [${overlappingWords.join(', ')}]`
+      );
+    });
+  } else {
+    results.info.push('✅ All groups are unique (no group has 3+ words from a previous group)');
+  }
+  
+  // Check for individual duplicate words (warning only, not an error)
   const duplicateWords = checkForDuplicateWords(newPuzzle, existingPuzzles);
   if (duplicateWords.length > 0) {
     if (!allowWordReuse) {
+      // Strict mode: fail on any word reuse
       results.valid = false;
       duplicateWords.forEach(({ word, usedIn }) => {
         results.errors.push(`Word "${word}" already used in: ${usedIn.join(', ')}`);
       });
     } else {
-      results.warnings.push(`${duplicateWords.length} word(s) reused from previous puzzles`);
+      // Normal mode: just warn about word reuse
+      results.warnings.push(`${duplicateWords.length} word(s) reused from previous puzzles (spread across different groups - OK)`);
+      if (verbose) {
+        duplicateWords.slice(0, 5).forEach(({ word, usedIn }) => {
+          results.warnings.push(`   - "${word}" was in: ${usedIn.join(', ')}`);
+        });
+        if (duplicateWords.length > 5) {
+          results.warnings.push(`   ... and ${duplicateWords.length - 5} more`);
+        }
+      }
     }
   } else {
     results.info.push('✅ No duplicate words found');

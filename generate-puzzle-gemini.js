@@ -10,17 +10,17 @@
  * 
  * Options:
  *   --preview           Preview without saving to Firestore
- *   --force             Save even if word pairs conflict with recent puzzles
+ *   --force             Save even if validation fails
  *   --ignore-existing   Ignore approved groups and generate full 4-group puzzle
- *   --allow-reuse       Disable word pair checking
+ *   --strict            Fail on ANY word reuse (not just duplicate groups)
  *   --retry=N           Number of retry attempts (default: 5)
  *   --days=N            Generate puzzles for N days
  *   --date=YYYY-MM-DD   Generate for specific date
  *   --stats             Show puzzle statistics
  * 
  * Features:
- *   - Avoids word PAIRS that were used together in the last 14 days
- *     (individual words CAN be reused, just not with the same companions)
+ *   - Allows word reuse across different groups
+ *   - Only fails if a group has 3+ words from the SAME previous group (duplicate group detection)
  *   - Fills missing groups if approved groups already exist for a date
  *   - Saves directly to Firebase Firestore
  */
@@ -315,12 +315,28 @@ ${existingGroupsSection}
 
 דרישות חשובות:
 - ${groupsNeeded === 4 ? '4 קבוצות' : `${groupsNeeded} קבוצות חדשות`}, כל קבוצה עם 4 מילים בעברית
+🚫 מגבלות קריטיות על מילים:
+- אל תשתמש במילים נדירות, אקדמיות או לא מדוברות
+- אל תמציא מילים, אלא אם כן:
+- זה קיצור / סלנג מוכר
+- ויש הסבר ברור למה זה נחשב מילה
+- אם מילה לא הייתה מובנת לאדם ברחוב – אל תשתמש בה
+- בדוק את עצמך: האם מישהו היה משתמש במילה הזו בווטסאפ?
 - הקשרים צריכים להיות יצירתיים אבל לא טריוויאליים
 - רמות קושי שונות: 1=קל, 2=בינוני, 3=קשה, 4=מאוד קשה
-- הקשרים יכולים להיות: תרבותיים, היסטוריים, לשוניים, קונספטואליים, משחקי מילים
+- הקשרים יכולים להיות:
+- שימוש יומיומי
+- תרבות ישראלית עכשווית
+- סלנג מוכר
+- משמעות כפולה נפוצה
+- דברים שאנשים באמת מדברים עליהם
+- הימנע מקשרים בלשניים עמוקים או תאורטיים
 - ודא שכל מילה מופיעה רק פעם אחת
 - הסברים צריכים להיות קצרים וברורים (עד 10 מילים)
-- השתמש במילים מעניינות ולא טריוויאליות
+- השתמש במילים יומיומיות, נפוצות ומוכרות לדובר עברית ממוצע
+- העדף מילים שמופיעות בשיחה יומיומית, חדשות, טלוויזיה או סלנג מוכר
+- הימנע ממילים ספרותיות, ארכאיות או מילוניות
+- אין צורך לנקד את המילים
 ${avoidPairsSection}
 ${avoidExplanationsSection}
 
@@ -335,6 +351,9 @@ ${avoidExplanationsSection}
 - "סלנג ל___"
 - "מילים נרדפות ל___"
 
+בדיקת איכות חובה:
+- עבור כל מילה: שאל את עצמך "האם זה נשמע טבעי בעברית מדוברת?"
+- אם יש ספק – בחר מילה אחרת
 החזר תשובה בפורמט JSON בלבד (ללא טקסט נוסף):
 ${groupsPrompt}
 ${countInstructions}
@@ -605,7 +624,7 @@ async function main() {
     preview: args.includes('--preview'),
     force: args.includes('--force'),
     stats: args.includes('--stats'),
-    allowReuse: args.includes('--allow-reuse'),
+    strict: args.includes('--strict'),  // Strict mode: fail on ANY word reuse
     ignoreExisting: args.includes('--ignore-existing'), // Force full generation even if approved groups exist
     retry: parseInt(args.find(arg => arg.startsWith('--retry='))?.split('=')[1]) || 5, // Increased default
     days: parseInt(args.find(arg => arg.startsWith('--days='))?.split('=')[1]) || 
@@ -617,7 +636,7 @@ async function main() {
   console.log('\n🎮 Connections - Gemini AI Puzzle Generator');
   console.log(`🤖 Using model: ${CONFIG.model}`);
   console.log(`🎯 Mode: ${flags.preview ? 'Preview' : 'Generate & Save to Firestore'}`);
-  console.log(`🔍 Word Pair Check: ${flags.allowReuse ? 'Disabled' : 'Enabled (avoids recent pairs)'}`);
+  console.log(`🔍 Validation: ${flags.strict ? 'Strict (no word reuse at all)' : 'Normal (fails only if 3+ words from same group)'}`);
   console.log(`📋 Use Existing Groups: ${flags.ignoreExisting ? 'No (full regeneration)' : 'Yes (fill missing)'}`);
   
   const data = await loadPuzzles();
@@ -728,8 +747,10 @@ async function main() {
         displayPuzzle(puzzle);
         
         // Validate uniqueness
+        // By default: allows word reuse, only fails if a group has 3+ words from a previous group
+        // With --strict: fails on any word reuse
         const uniquenessValidation = validatePuzzleUniqueness(puzzle, data.puzzles, {
-          allowWordReuse: flags.allowReuse,
+          allowWordReuse: !flags.strict,  // Default: true (allow reuse), --strict: false (no reuse)
           verbose: true
         });
         
